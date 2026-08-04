@@ -7,6 +7,7 @@ export const DEFAULTS = {
   floorT: 1.6,
   draftDeg: 5.0,
   clearanceTotal: 3.0,
+  heightClearance: 5.0,
   drainHoleCount: 8,
   drainHoleDiam: 6.0,
   nSeg: 96,
@@ -197,21 +198,49 @@ export function sizeFromContainerInner({
   ...rest
 }) {
   const clearanceTotal = rest.clearanceTotal ?? DEFAULTS.clearanceTotal;
+  const heightClearance = rest.heightClearance ?? DEFAULTS.heightClearance;
+  delete rest.heightClearance; // not a resolvePot param
+
   const outerTopDiam = containerTopInnerDiam - clearanceTotal;
   if (outerTopDiam <= 0) {
     throw new Error("Container inner top diameter is too small once clearance is subtracted.");
   }
-  const h = height === null || height === undefined ? containerInnerDepth : height;
-  return resolvePot({
+
+  let h = height;
+  let heightNote = null;
+  if (h === null || h === undefined) {
+    h = containerInnerDepth - heightClearance;
+    if (h <= 0) {
+      throw new Error("Container inner depth is too shallow once height clearance is subtracted.");
+    }
+    heightNote =
+      `Height set to ${h.toFixed(1)}mm (${heightClearance.toFixed(1)}mm less than the decorative pot's ` +
+      `${containerInnerDepth.toFixed(1)}mm inner depth) so it doesn't jam at the bottom of the cavity.`;
+  }
+
+  const spec = resolvePot({
     outerTopDiam,
     height: h,
     containerBottomInnerDiam,
     ...rest,
   });
+  if (heightNote) spec.notes = [heightNote, ...spec.notes];
+  return spec;
 }
 
-export function sizeFromDirectTarget({ outerTopDiam, height, ...rest }) {
-  return resolvePot({ outerTopDiam, height, containerBottomInnerDiam: null, ...rest });
+// Decorative pot's inner top diameter + inner depth only — no bottom
+// diameter needed. Quicker alternative to sizeFromContainerInner for when
+// you can't easily measure the container's bottom opening; draft angle
+// stays at its default/override since there's no bottom constraint to
+// auto-steepen against.
+export function sizeFromContainerSimple({ containerTopInnerDiam, containerInnerDepth, height = null, ...rest }) {
+  return sizeFromContainerInner({
+    containerTopInnerDiam,
+    containerBottomInnerDiam: null,
+    containerInnerDepth,
+    height,
+    ...rest,
+  });
 }
 
 export function formatReport(spec) {

@@ -28,26 +28,32 @@
 <main>
   <section id="input-section" class="card">
 
+    <p class="hint">Measure the INSIDE of your decorative pot — not its outside — and I'll shrink those
+    numbers down to a liner pot that fits inside it, with room to lift back out.</p>
+
     <div class="mode-switch" role="tablist">
       <label class="mode-tab">
         <input type="radio" name="mode" value="direct" id="modeDirect" checked />
-        Direct pot dimensions
+        Simple (top + depth)
       </label>
       <label class="mode-tab">
         <input type="radio" name="mode" value="container" id="modeContainer" />
-        Fit inside a decorative pot
+        Full (+ bottom diam, or STL)
       </label>
     </div>
 
     <div id="directPanel" class="mode-panel">
       <div class="field-grid">
-        <label>Outer top diameter (mm)
-          <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 100" />
+        <label>Decorative pot inner top diameter (mm)
+          <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 150" />
         </label>
-        <label>Height (mm)
-          <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 90" />
+        <label>Decorative pot inner depth (mm)
+          <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 130" />
         </label>
       </div>
+      <p class="hint">Just the top opening and depth — good enough when the pot doesn't taper much,
+      or you can't easily reach in to measure the bottom. For pots that narrow a lot near the base,
+      use "Full" instead so the taper is calculated correctly.</p>
     </div>
 
     <div id="containerPanel" class="mode-panel" hidden>
@@ -80,6 +86,7 @@
         <label>Wall thickness (mm)<input type="number" id="wallT" step="0.1" value="1.6" /></label>
         <label>Floor thickness (mm)<input type="number" id="floorT" step="0.1" value="1.6" /></label>
         <label>Total diametric clearance (mm)<input type="number" id="clearance" step="0.1" value="3" /></label>
+        <label>Height clearance (mm)<input type="number" id="heightClearance" step="0.1" value="5" /></label>
         <label>Drain hole count<input type="number" id="holes" step="1" min="0" value="8" /></label>
         <label>Drain hole diameter (mm)<input type="number" id="holeDiam" step="0.1" value="6" /></label>
         <label>Circular resolution (segments)<input type="number" id="nSeg" step="1" min="24" value="96" /></label>

@@ -17,6 +17,7 @@ const els = {
   ctd: $("ctd"), cbd: $("cbd"), cdep: $("cdep"),
   ttd: $("ttd"), th: $("th"),
   draftDeg: $("draftDeg"), wallT: $("wallT"), floorT: $("floorT"), clearance: $("clearance"),
+  heightClearance: $("heightClearance"),
   holes: $("holes"), holeDiam: $("holeDiam"),
   nSeg: $("nSeg"),
   generateBtn: $("generateBtn"),
@@ -66,6 +67,7 @@ function readAdvanced() {
     wallT: num(els.wallT, calc.DEFAULTS.wallT),
     floorT: num(els.floorT, calc.DEFAULTS.floorT),
     clearanceTotal: num(els.clearance, calc.DEFAULTS.clearanceTotal),
+    heightClearance: num(els.heightClearance, calc.DEFAULTS.heightClearance),
     drainHoleCount: Math.round(num(els.holes, calc.DEFAULTS.drainHoleCount)),
     drainHoleDiam: num(els.holeDiam, calc.DEFAULTS.drainHoleDiam),
     nSeg: Math.round(num(els.nSeg, calc.DEFAULTS.nSeg)),
@@ -142,10 +144,10 @@ async function generate(updateUrl) {
     } else {
       const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
       if (!Number.isFinite(ttd) || !Number.isFinite(th)) {
-        alert("Fill in the pot's outer top diameter and height.");
+        alert("Fill in your decorative pot's inner top diameter and depth.");
         return;
       }
-      spec = calc.sizeFromDirectTarget({ outerTopDiam: ttd, height: th, ...advanced });
+      spec = calc.sizeFromContainerSimple({ containerTopInnerDiam: ttd, containerInnerDepth: th, ...advanced });
     }
   } catch (err) {
     alert(`Couldn't compute a pot: ${err.message}`);
@@ -266,6 +268,7 @@ function buildStateParams(mode, advanced) {
   p.set("wall", advanced.wallT);
   p.set("floor", advanced.floorT);
   p.set("clr", advanced.clearanceTotal);
+  p.set("hclr", advanced.heightClearance);
   p.set("holes", advanced.drainHoleCount);
   p.set("holeD", advanced.drainHoleDiam);
   p.set("seg", advanced.nSeg);
@@ -289,6 +292,7 @@ function applyStateFromURL() {
   if (p.has("wall")) els.wallT.value = p.get("wall");
   if (p.has("floor")) els.floorT.value = p.get("floor");
   if (p.has("clr")) els.clearance.value = p.get("clr");
+  if (p.has("hclr")) els.heightClearance.value = p.get("hclr");
   if (p.has("holes")) els.holes.value = p.get("holes");
   if (p.has("holeD")) els.holeDiam.value = p.get("holeD");
   if (p.has("seg")) els.nSeg.value = p.get("seg");
