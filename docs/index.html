@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nursery Pot Sizing Tool</title>
+<link rel="stylesheet" href="style.css" />
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Nursery Pot Sizing Tool</h1>
+  <p class="subtitle">Round, tapered 3D-printed liner pots that fit inside a decorative pot.
+  Tuned for a Bambu Lab P2S, 0.4mm nozzle, PETG.</p>
+</header>
+
+<main>
+  <section id="input-section" class="card">
+
+    <div class="mode-switch" role="tablist">
+      <label class="mode-tab">
+        <input type="radio" name="mode" value="container" id="modeContainer" checked />
+        Fit inside a decorative pot
+      </label>
+      <label class="mode-tab">
+        <input type="radio" name="mode" value="direct" id="modeDirect" />
+        Direct pot dimensions
+      </label>
+    </div>
+
+    <div id="containerPanel" class="mode-panel">
+      <div id="stlDrop" class="dropzone">
+        <p><strong>Optional:</strong> drop a decorative pot STL here (or click to choose a file) to
+        auto-fill the fields below from its inner cavity.</p>
+        <input type="file" id="stlFileInput" accept=".stl" hidden />
+      </div>
+      <div id="stlStatus" class="status-box" hidden></div>
+
+      <div class="field-grid">
+        <label>Inner top diameter (mm)
+          <input type="number" id="ctd" step="0.1" min="1" placeholder="e.g. 150" />
+        </label>
+        <label>Inner bottom diameter (mm)
+          <input type="number" id="cbd" step="0.1" min="1" placeholder="e.g. 110" />
+        </label>
+        <label>Inner depth (mm)
+          <input type="number" id="cdep" step="0.1" min="1" placeholder="e.g. 130" />
+        </label>
+      </div>
+      <p class="hint">Measure (or detect) the INSIDE of the decorative pot — not its outside — since
+      that's the cavity the nursery pot needs to fit into.</p>
+    </div>
+
+    <div id="directPanel" class="mode-panel" hidden>
+      <div class="field-grid">
+        <label>Outer top diameter (mm)
+          <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 100" />
+        </label>
+        <label>Height (mm)
+          <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 90" />
+        </label>
+      </div>
+    </div>
+
+    <details id="advanced">
+      <summary>Advanced options (design rule overrides)</summary>
+      <div class="field-grid">
+        <label>Draft angle (deg)<input type="number" id="draftDeg" step="0.1" value="5" /></label>
+        <label>Wall thickness (mm)<input type="number" id="wallT" step="0.1" value="1.6" /></label>
+        <label>Floor thickness (mm)<input type="number" id="floorT" step="0.1" value="1.6" /></label>
+        <label>Total diametric clearance (mm)<input type="number" id="clearance" step="0.1" value="3" /></label>
+        <label>Drain hole count<input type="number" id="holes" step="1" min="0" value="8" /></label>
+        <label>Drain hole diameter (mm)<input type="number" id="holeDiam" step="0.1" value="6" /></label>
+        <label>Feet count<input type="number" id="feetCount" step="1" min="0" value="4" /></label>
+        <label>Feet height (mm)<input type="number" id="feetHeight" step="0.1" value="2.5" /></label>
+        <label>Feet diameter (mm)<input type="number" id="feetDiam" step="0.1" value="8" /></label>
+        <label>Circular resolution (segments)<input type="number" id="nSeg" step="1" min="24" value="96" /></label>
+      </div>
+    </details>
+
+    <button id="generateBtn" class="primary-btn">Generate pot</button>
+  </section>
+
+  <section id="resultsSection" class="card" hidden>
+    <h2>Computed dimensions</h2>
+    <pre id="reportPre"></pre>
+    <div id="notesBox" class="notes-box" hidden></div>
+    <div id="warningsBox" class="warnings-box" hidden></div>
+
+    <div class="viewer-row">
+      <div id="viewer3d"></div>
+      <div id="arColumn">
+        <model-viewer id="modelViewer" ar ar-modes="scene-viewer quick-look webxr"
+          camera-controls interaction-prompt="none" style="width:100%;height:260px;display:none;">
+          <button slot="ar-button" id="arButton" class="primary-btn ar-btn">View in your space (AR)</button>
+        </model-viewer>
+        <div id="qrBox">
+          <p class="hint">Scan with your phone to open this pot and view it in AR:</p>
+          <canvas id="qrCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="download-row">
+      <button id="downloadStlBtn" class="primary-btn">Download STL</button>
+      <button id="copyLinkBtn" class="secondary-btn">Copy shareable link</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>Everything runs in your browser — nothing is uploaded anywhere.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
