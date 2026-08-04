@@ -59,19 +59,8 @@ export function buildPotMesh(spec) {
     pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
   }
 
-  // 8) Feet
-  const nFeet = spec.feetCount;
-  if (nFeet > 0) {
-    const footR = spec.feetDiam / 2.0;
-    const footH = spec.feetHeight;
-    const boltRFeet = spec.feetBoltCircleDiam / 2.0;
-    for (let i = 0; i < nFeet; i++) {
-      const a = (2 * Math.PI * i) / nFeet;
-      const cx = boltRFeet * Math.cos(a);
-      const cy = boltRFeet * Math.sin(a);
-      pieces.push(...geo.cylinderSolid(footR, -footH, 0.0, 20, cx, cy));
-    }
-  }
+  // No feet: the pot sits flat on its own floor (z=0) for reliable
+  // first-layer adhesion.
 
   return pieces; // array of [p0,p1,p2] triangles
 }

@@ -9,16 +9,14 @@ export const DEFAULTS = {
   clearanceTotal: 3.0,
   drainHoleCount: 8,
   drainHoleDiam: 6.0,
-  feetCount: 4,
-  feetHeight: 2.5,
-  feetDiam: 8.0,
   nSeg: 96,
 };
 
 const NOZZLE = 0.4;
 const MIN_PRINTABLE_WALL = 3 * NOZZLE;
 const MIN_PRINTABLE_FLOOR = 3 * NOZZLE;
-const MAX_SENSIBLE_DRAFT_DEG = 30.0;
+const MAX_PRINTABLE_DRAFT_DEG = 45.0; // hard cap — walls at/under this angle from
+                                      // vertical print without supports on an FDM printer
 const MIN_INNER_FLOOR_DIAM = 15.0;
 
 const deg2rad = (d) => (d * Math.PI) / 180.0;
@@ -33,9 +31,6 @@ export function resolvePot({
   clearanceTotal = DEFAULTS.clearanceTotal,
   drainHoleCount = DEFAULTS.drainHoleCount,
   drainHoleDiam = DEFAULTS.drainHoleDiam,
-  feetCount = DEFAULTS.feetCount,
-  feetHeight = DEFAULTS.feetHeight,
-  feetDiam = DEFAULTS.feetDiam,
   nSeg = DEFAULTS.nSeg,
 }) {
   const warnings = [];
@@ -55,20 +50,33 @@ export function resolvePot({
         requiredDeg = (Math.atan(deltaR / height) * 180) / Math.PI;
       }
       if (requiredDeg > draftDeg) {
-        draftUsedDeg = requiredDeg;
-        notes.push(
-          `Draft angle increased from ${draftDeg.toFixed(1)} deg to ${draftUsedDeg.toFixed(1)} deg ` +
-            `so the pot clears the container's narrower bottom opening ` +
-            `(${containerBottomInnerDiam.toFixed(1)}mm inner diameter).`
-        );
+        draftUsedDeg = Math.min(requiredDeg, MAX_PRINTABLE_DRAFT_DEG);
+        if (requiredDeg > MAX_PRINTABLE_DRAFT_DEG) {
+          const actualBottomOuterDiam = 2 * (RTopOuter - height * Math.tan(deg2rad(draftUsedDeg)));
+          const actualClearance = containerBottomInnerDiam - actualBottomOuterDiam;
+          if (actualClearance < 0) {
+            warnings.push(
+              `Draft angle capped at ${MAX_PRINTABLE_DRAFT_DEG.toFixed(0)} deg (steeper walls would need ` +
+                `print supports) — even so, the pot's bottom (${actualBottomOuterDiam.toFixed(1)}mm) is still ` +
+                `${Math.abs(actualClearance).toFixed(1)}mm WIDER than the container's bottom opening. It won't ` +
+                `reach the floor of the container. Reduce the top diameter or height.`
+            );
+          } else {
+            warnings.push(
+              `Draft angle capped at ${MAX_PRINTABLE_DRAFT_DEG.toFixed(0)} deg (steeper walls would need print ` +
+                `supports), so bottom clearance is only ${actualClearance.toFixed(1)}mm here instead of the ` +
+                `usual ${clearanceTotal.toFixed(1)}mm. Reduce the top diameter if you need the full clearance ` +
+                `at the bottom too.`
+            );
+          }
+        } else {
+          notes.push(
+            `Draft angle increased from ${draftDeg.toFixed(1)} deg to ${draftUsedDeg.toFixed(1)} deg ` +
+              `so the pot clears the container's narrower bottom opening ` +
+              `(${containerBottomInnerDiam.toFixed(1)}mm inner diameter).`
+          );
+        }
       }
-    }
-    if (draftUsedDeg > MAX_SENSIBLE_DRAFT_DEG) {
-      warnings.push(
-        `Required draft angle (${draftUsedDeg.toFixed(1)} deg) is unusually steep — the container ` +
-          `tapers a lot more than the pot's top-diameter fit allows. Consider reducing the nursery ` +
-          `pot's target top diameter.`
-      );
     }
   }
 
@@ -131,17 +139,31 @@ export function resolvePot({
     nHoles = 0;
   }
 
-  // --- feet ---
-  let footR = feetDiam / 2.0;
-  let boltRFeet = RBottomOuter * 0.78;
-  let nFeet = feetCount;
-  if (boltRFeet - footR < 2.0) {
-    footR = Math.max(1.5, boltRFeet - 2.0);
-    warnings.push(`Foot diameter reduced to ${(2 * footR).toFixed(1)}mm to fit on the small pot base.`);
-  }
-  if (boltRFeet <= footR) {
-    warnings.push("Base is too small to fit standoff feet with the given diameter — feet omitted.");
-    nFeet = 0;
+  // Make sure adjacent holes don't overlap each other around the bolt
+  // circle — the wall-clearance check above only guards against the
+  // outer wall, not against holes crowding into one another.
+  if (nHoles > 0) {
+    const gap = 1.0; // minimum clear gap between adjacent hole edges
+    let adjusted = false;
+    while (nHoles > 4 && 2 * boltRHoles * Math.sin(Math.PI / nHoles) < 2 * holeR + gap) {
+      nHoles -= 1;
+      adjusted = true;
+    }
+    let chord = 2 * boltRHoles * Math.sin(Math.PI / nHoles);
+    if (chord < 2 * holeR + gap) {
+      const newHoleR = chord > gap ? Math.max(1.5, (chord - gap) / 2.0) : 1.5;
+      if (newHoleR < holeR) {
+        holeR = newHoleR;
+        dHole = 2 * holeR;
+        adjusted = true;
+      }
+    }
+    if (adjusted) {
+      warnings.push(
+        `Drain hole layout adjusted to ${nHoles} x ${dHole.toFixed(1)}mm so adjacent holes don't overlap ` +
+          `on this small a floor.`
+      );
+    }
   }
 
   return {
@@ -161,12 +183,7 @@ export function resolvePot({
     drainHoleCount: nHoles,
     drainHoleDiam: dHole,
     drainHoleBoltCircleDiam: 2 * boltRHoles,
-    feetCount: nFeet,
-    feetDiam: 2 * footR,
-    feetHeight,
-    feetBoltCircleDiam: 2 * boltRFeet,
     nSeg,
-    totalHeightInclFeet: height + (nFeet > 0 ? feetHeight : 0.0),
     warnings,
     notes,
   };
@@ -203,13 +220,11 @@ export function formatReport(spec) {
   lines.push(`Outer bottom diameter: ${spec.outerBottomDiam.toFixed(1)} mm`);
   lines.push(`Inner top diameter:    ${spec.innerTopDiam.toFixed(1)} mm`);
   lines.push(`Inner bottom diameter: ${spec.innerBottomDiam.toFixed(1)} mm`);
-  lines.push(`Height (pot body):     ${spec.height.toFixed(1)} mm`);
+  lines.push(`Height:                ${spec.height.toFixed(1)} mm`);
   lines.push(`Usable soil depth:     ${spec.usableDepth.toFixed(1)} mm`);
   lines.push(`Wall thickness:        ${spec.wallT.toFixed(2)} mm`);
   lines.push(`Floor thickness:       ${spec.floorT.toFixed(2)} mm`);
   lines.push(`Draft angle:           ${spec.draftDeg.toFixed(1)} deg`);
   lines.push(`Drain holes:           ${spec.drainHoleCount} x ${spec.drainHoleDiam.toFixed(1)} mm dia`);
-  lines.push(`Feet:                  ${spec.feetCount} x ${spec.feetDiam.toFixed(1)} mm dia x ${spec.feetHeight.toFixed(1)} mm tall`);
-  lines.push(`Total height w/ feet:  ${spec.totalHeightInclFeet.toFixed(1)} mm`);
   return lines.join("\n");
 }
