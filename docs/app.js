@@ -220,9 +220,12 @@ async function setupAR(triangles) {
 
 function renderShareTarget() {
   if (!isCoarsePointer && window.QRCode) {
-    QRCode.toCanvas(els.qrCanvas, location.href, { width: 220, margin: 1 }, (err) => {
-      if (err) console.warn("QR generation failed:", err);
-    });
+    els.qrCanvas.innerHTML = ""; // qrcodejs appends into the container each call
+    try {
+      new QRCode(els.qrCanvas, { text: location.href, width: 220, height: 220 });
+    } catch (err) {
+      console.warn("QR generation failed:", err);
+    }
   }
 }
 

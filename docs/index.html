@@ -15,7 +15,7 @@
 }
 </script>
 <script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -30,16 +30,27 @@
 
     <div class="mode-switch" role="tablist">
       <label class="mode-tab">
-        <input type="radio" name="mode" value="container" id="modeContainer" checked />
-        Fit inside a decorative pot
+        <input type="radio" name="mode" value="direct" id="modeDirect" checked />
+        Direct pot dimensions
       </label>
       <label class="mode-tab">
-        <input type="radio" name="mode" value="direct" id="modeDirect" />
-        Direct pot dimensions
+        <input type="radio" name="mode" value="container" id="modeContainer" />
+        Fit inside a decorative pot
       </label>
     </div>
 
-    <div id="containerPanel" class="mode-panel">
+    <div id="directPanel" class="mode-panel">
+      <div class="field-grid">
+        <label>Outer top diameter (mm)
+          <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 100" />
+        </label>
+        <label>Height (mm)
+          <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 90" />
+        </label>
+      </div>
+    </div>
+
+    <div id="containerPanel" class="mode-panel" hidden>
       <div id="stlDrop" class="dropzone">
         <p><strong>Optional:</strong> drop a decorative pot STL here (or click to choose a file) to
         auto-fill the fields below from its inner cavity.</p>
@@ -60,17 +71,6 @@
       </div>
       <p class="hint">Measure (or detect) the INSIDE of the decorative pot — not its outside — since
       that's the cavity the nursery pot needs to fit into.</p>
-    </div>
-
-    <div id="directPanel" class="mode-panel" hidden>
-      <div class="field-grid">
-        <label>Outer top diameter (mm)
-          <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 100" />
-        </label>
-        <label>Height (mm)
-          <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 90" />
-        </label>
-      </div>
     </div>
 
     <details id="advanced">
@@ -107,7 +107,7 @@
         </model-viewer>
         <div id="qrBox">
           <p class="hint">Scan with your phone to open this pot and view it in AR:</p>
-          <canvas id="qrCanvas"></canvas>
+          <div id="qrCanvas"></div>
         </div>
       </div>
     </div>
