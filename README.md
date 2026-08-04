@@ -25,9 +25,9 @@ python3 -m http.server 8000
 Settings → Pages, set the source to the `main` branch, `/docs` folder. GitHub will publish it
 at `https://<username>.github.io/<repo>/`.
 
-Flow: pick "fit inside a decorative pot" (type in its inner top/bottom diameter and depth, or
-drop in an STL to auto-fill those fields) or "direct pot dimensions" for the nursery pot's own
-size. Advanced options (draft angle, wall/floor thickness, clearance, drain holes, feet) are
+Flow: pick "direct pot dimensions" for the nursery pot's own size, or "fit inside a decorative
+pot" (type in its inner top/bottom diameter and depth, or drop in an STL to auto-fill those
+fields). Advanced options (draft angle, wall/floor thickness, clearance, drain holes) are
 collapsed by default with sensible design-rule defaults. Generating a pot shows the computed
 numbers, any printability warnings, a live 3D preview, and a download-STL button. On a phone,
 a "View in AR" button appears; on desktop, a QR code appears that encodes the same pot's
@@ -50,11 +50,15 @@ dimensions from an uploaded decorative-pot STL) and `--target-top-diam`/`--targe
 ## Design rules baked in
 
 - 1.6mm walls (4 perimeters @ 0.4mm nozzle), 1.6mm minimum floor
-- 5° default wall draft (auto-steepened if needed to clear a narrower container bottom)
+- 5° default wall draft, auto-steepened if needed to clear a narrower container bottom, but
+  hard-capped at 45° from vertical so walls always print without supports
 - ~3mm total diametric clearance between nursery pot and container
-- 6–8 × 6mm drainage holes, 3–4 standoff feet (~2.5mm tall)
-- Warns on anything under-strength or unprintable (thin walls/floor, cramped drain holes,
-  a base too small for feet) before generating geometry
+- 6–8 × 6mm drainage holes; adjacent holes are auto-spaced/shrunk to avoid overlapping on a
+  small floor
+- No feet — the pot sits flat on its own floor for reliable first-layer adhesion
+- Warns on anything under-strength or unprintable (thin walls/floor, cramped drain holes, or a
+  draft angle so capped that the pot won't reach the container's floor) before generating
+  geometry
 
 ## Notes on the STL-upload cavity detection
 

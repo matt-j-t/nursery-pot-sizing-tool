@@ -3,7 +3,9 @@
 
 Printer/material defaults: Bambu Lab P2S, 0.4mm nozzle, PETG.
 Design rules baked in: 1.6mm walls (4 perimeters), 1.6mm min floor, 5 deg
-default draft, ~3mm total diametric clearance, drainage holes + feet.
+default draft (auto-steepened up to a hard cap of 45 deg so walls always
+print without supports), ~3mm total diametric clearance, drainage holes.
+No feet — the pot sits flat on its own floor.
 
 USAGE
 
@@ -47,9 +49,6 @@ def build_arg_parser():
     d.add_argument("--clearance", type=float, default=calc.CLEARANCE_TOTAL_DEFAULT, help="total diametric clearance, mm")
     d.add_argument("--drain-holes", type=int, default=calc.DRAIN_HOLE_COUNT_DEFAULT)
     d.add_argument("--drain-hole-diam", type=float, default=calc.DRAIN_HOLE_DIAM_DEFAULT)
-    d.add_argument("--feet", type=int, default=calc.FEET_COUNT_DEFAULT)
-    d.add_argument("--feet-height", type=float, default=calc.FEET_HEIGHT_DEFAULT)
-    d.add_argument("--feet-diam", type=float, default=calc.FEET_DIAM_DEFAULT)
     d.add_argument("--pot-height", type=float, default=None, help="override nursery pot body height (default: full container depth)")
     d.add_argument("--n-seg", type=int, default=96, help="circular resolution (triangles per ring)")
 
@@ -68,9 +67,6 @@ def main(argv=None):
         clearance_total=args.clearance,
         drain_hole_count=args.drain_holes,
         drain_hole_diam=args.drain_hole_diam,
-        feet_count=args.feet,
-        feet_height=args.feet_height,
-        feet_diam=args.feet_diam,
         n_seg=args.n_seg,
     )
 

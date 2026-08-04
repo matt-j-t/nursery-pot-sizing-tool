@@ -60,16 +60,8 @@ def build_pot_mesh(spec):
     if n_holes > 0:
         pieces.append(geo.hole_tunnel_walls(hole_centers, hole_r, 0.0, floor_t, n_hole=n_hole))
 
-    # 8) Feet (separate watertight standoffs below z=0)
-    n_feet = spec["feet_count"]
-    if n_feet > 0:
-        foot_r = spec["feet_diam"] / 2.0
-        foot_h = spec["feet_height"]
-        bolt_r_feet = spec["feet_bolt_circle_diam"] / 2.0
-        for i in range(n_feet):
-            a = 2 * math.pi * i / n_feet
-            cx, cy = bolt_r_feet * math.cos(a), bolt_r_feet * math.sin(a)
-            pieces.append(geo.cylinder_solid(foot_r, -foot_h, 0.0, n=20, cx=cx, cy=cy))
+    # No feet: the pot sits flat on its own floor (z=0) for reliable
+    # first-layer adhesion.
 
     all_tris = np.concatenate(pieces, axis=0)
     return all_tris
