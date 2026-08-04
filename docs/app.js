@@ -18,7 +18,6 @@ const els = {
   ttd: $("ttd"), th: $("th"),
   draftDeg: $("draftDeg"), wallT: $("wallT"), floorT: $("floorT"), clearance: $("clearance"),
   holes: $("holes"), holeDiam: $("holeDiam"),
-  feetCount: $("feetCount"), feetHeight: $("feetHeight"), feetDiam: $("feetDiam"),
   nSeg: $("nSeg"),
   generateBtn: $("generateBtn"),
   resultsSection: $("resultsSection"),
@@ -69,9 +68,6 @@ function readAdvanced() {
     clearanceTotal: num(els.clearance, calc.DEFAULTS.clearanceTotal),
     drainHoleCount: Math.round(num(els.holes, calc.DEFAULTS.drainHoleCount)),
     drainHoleDiam: num(els.holeDiam, calc.DEFAULTS.drainHoleDiam),
-    feetCount: Math.round(num(els.feetCount, calc.DEFAULTS.feetCount)),
-    feetHeight: num(els.feetHeight, calc.DEFAULTS.feetHeight),
-    feetDiam: num(els.feetDiam, calc.DEFAULTS.feetDiam),
     nSeg: Math.round(num(els.nSeg, calc.DEFAULTS.nSeg)),
   };
 }
@@ -272,9 +268,6 @@ function buildStateParams(mode, advanced) {
   p.set("clr", advanced.clearanceTotal);
   p.set("holes", advanced.drainHoleCount);
   p.set("holeD", advanced.drainHoleDiam);
-  p.set("feet", advanced.feetCount);
-  p.set("feetH", advanced.feetHeight);
-  p.set("feetD", advanced.feetDiam);
   p.set("seg", advanced.nSeg);
   return p;
 }
@@ -298,9 +291,6 @@ function applyStateFromURL() {
   if (p.has("clr")) els.clearance.value = p.get("clr");
   if (p.has("holes")) els.holes.value = p.get("holes");
   if (p.has("holeD")) els.holeDiam.value = p.get("holeD");
-  if (p.has("feet")) els.feetCount.value = p.get("feet");
-  if (p.has("feetH")) els.feetHeight.value = p.get("feetH");
-  if (p.has("feetD")) els.feetDiam.value = p.get("feetD");
   if (p.has("seg")) els.nSeg.value = p.get("seg");
   return true;
 }
