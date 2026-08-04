@@ -25,13 +25,15 @@ python3 -m http.server 8000
 Settings → Pages, set the source to the `main` branch, `/docs` folder. GitHub will publish it
 at `https://<username>.github.io/<repo>/`.
 
-Flow: pick "direct pot dimensions" for the nursery pot's own size, or "fit inside a decorative
-pot" (type in its inner top/bottom diameter and depth, or drop in an STL to auto-fill those
-fields). Advanced options (draft angle, wall/floor thickness, clearance, drain holes) are
-collapsed by default with sensible design-rule defaults. Generating a pot shows the computed
-numbers, any printability warnings, a live 3D preview, and a download-STL button. On a phone,
-a "View in AR" button appears; on desktop, a QR code appears that encodes the same pot's
-parameters in the URL, so scanning it opens the identical pot on your phone for AR viewing.
+Flow: every mode takes measurements of your DECORATIVE pot's inside — you never enter the
+nursery pot's own final size directly. Pick "Simple" (just the inner top diameter and depth —
+good enough when the pot doesn't taper much) or "Full" (inner top diameter, bottom diameter,
+and depth — type them in, or drop in an STL to auto-fill those fields). Advanced options (draft
+angle, wall/floor thickness, diametric clearance, height clearance, drain holes) are collapsed
+by default with sensible design-rule defaults. Generating a pot shows the computed numbers, any
+printability warnings, a live 3D preview, and a download-STL button. On a phone, a "View in AR"
+button appears; on desktop, a QR code appears that encodes the same pot's parameters in the
+URL, so scanning it opens the identical pot on your phone for AR viewing.
 
 Everything (geometry construction, STL/GLB/USDZ export, the STL-upload cavity analysis) runs
 client-side — nothing is uploaded anywhere.
@@ -44,8 +46,9 @@ python3 nursery_pot.py --container-top-diam 150 --container-bottom-diam 110 \
 ```
 
 Run `python3 nursery_pot.py -h` for the full option list, including `--from-stl` (derive
-dimensions from an uploaded decorative-pot STL) and `--target-top-diam`/`--target-height`
-(size the nursery pot directly, no container). Requires only Python 3 + numpy.
+dimensions from an uploaded decorative-pot STL) and `--top-diam`/`--depth` (simple mode — just
+the decorative pot's inner top diameter and depth, no bottom diameter needed). Requires only
+Python 3 + numpy.
 
 ## Design rules baked in
 
@@ -53,6 +56,8 @@ dimensions from an uploaded decorative-pot STL) and `--target-top-diam`/`--targe
 - 5° default wall draft, auto-steepened if needed to clear a narrower container bottom, but
   hard-capped at 45° from vertical so walls always print without supports
 - ~3mm total diametric clearance between nursery pot and container
+- ~5mm height clearance — the nursery pot sits this much shorter than the container's inner
+  depth so it doesn't jam at the bottom and is easy to lift back out
 - 6–8 × 6mm drainage holes; adjacent holes are auto-spaced/shrunk to avoid overlapping on a
   small floor
 - No feet — the pot sits flat on its own floor for reliable first-layer adhesion

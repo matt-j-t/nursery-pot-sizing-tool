@@ -1,11 +1,16 @@
 """Sizing logic for round, tapered 3D-printed nursery pots.
 
-Two entry points:
-  size_from_container_inner()  -- given the decorative pot's INNER cavity
-                                   profile (top/bottom diameter, depth),
-                                   derive a nursery pot that fits inside it.
-  size_from_direct_target()    -- given the nursery pot's own target outer
-                                   dimensions directly.
+Both entry points take your DECORATIVE pot's inner-cavity measurements and
+shrink them down to a nursery-pot liner that fits inside:
+  size_from_container_simple() -- inner top diameter + inner depth only.
+                                   Quick mode for when you can't easily
+                                   measure (or the pot doesn't really have)
+                                   a distinctly different bottom diameter.
+  size_from_container_inner()  -- full inner profile (top diameter, bottom
+                                   diameter, depth), e.g. from calipers or
+                                   an STL scan. Also auto-steepens the draft
+                                   angle if needed so the pot still clears a
+                                   narrower bottom opening.
 
 Both funnel into resolve_pot() which does the shared draft/wall/floor math
 and printability checks, and returns a plain dict ("spec") consumed by
@@ -14,9 +19,9 @@ build_pot() in pot_builder.py.
 Defaults reflect the fixed design rules:
   wall 1.6mm, floor 1.6mm min, 5 deg draft (auto-steepened up to a hard cap
   of 45 deg so walls always print without supports), ~3mm total diametric
-  clearance, 6-8 x 6mm drain holes. No feet — the pot sits flat on its own
-  floor for reliable first-layer adhesion. Printer: Bambu P2S, 0.4mm
-  nozzle, PETG.
+  clearance, 5mm height clearance, 6-8 x 6mm drain holes. No feet — the pot
+  sits flat on its own floor for reliable first-layer adhesion. Printer:
+  Bambu P2S, 0.4mm nozzle, PETG.
 """
 import math
 
@@ -24,7 +29,9 @@ import math
 WALL_T_DEFAULT = 1.6
 FLOOR_T_DEFAULT = 1.6
 DRAFT_DEG_DEFAULT = 5.0
-CLEARANCE_TOTAL_DEFAULT = 3.0  # total diametric clearance (both sides combined)
+CLEARANCE_TOTAL_DEFAULT = 3.0   # total diametric clearance (both sides combined)
+HEIGHT_CLEARANCE_DEFAULT = 5.0  # nursery pot sits this much shorter than the
+                                # container's inner depth, so it doesn't jam
 DRAIN_HOLE_COUNT_DEFAULT = 8
 DRAIN_HOLE_DIAM_DEFAULT = 6.0
 NOZZLE = 0.4
@@ -211,24 +218,54 @@ def size_from_container_inner(
     height=None,
     **kwargs,
 ):
-    """Derive nursery pot spec to fit inside a decorative pot's inner cavity."""
+    """Derive nursery pot spec to fit inside a decorative pot's inner cavity.
+
+    Diameter is shrunk by clearance_total (default 3mm total, both sides
+    combined) and, unless an explicit height override is given, height is
+    shrunk by height_clearance (default 5mm) below the container's inner
+    depth so the finished pot doesn't jam at the bottom of the cavity.
+    """
     clearance_total = kwargs.get("clearance_total", CLEARANCE_TOTAL_DEFAULT)
+    height_clearance = kwargs.pop("height_clearance", HEIGHT_CLEARANCE_DEFAULT)
     outer_top_diam = container_top_inner_diam - clearance_total
     if outer_top_diam <= 0:
         raise ValueError("Container inner top diameter is too small once clearance is subtracted.")
+
+    height_note = None
     if height is None:
-        height = container_inner_depth  # sits flush to full depth by default
-    return resolve_pot(
+        height = container_inner_depth - height_clearance
+        if height <= 0:
+            raise ValueError("Container inner depth is too shallow once height clearance is subtracted.")
+        height_note = (
+            f"Height set to {height:.1f}mm ({height_clearance:.1f}mm less than the decorative pot's "
+            f"{container_inner_depth:.1f}mm inner depth) so it doesn't jam at the bottom of the cavity."
+        )
+
+    spec = resolve_pot(
         outer_top_diam=outer_top_diam,
         height=height,
         container_bottom_inner_diam=container_bottom_inner_diam,
         **kwargs,
     )
+    if height_note:
+        spec["notes"].insert(0, height_note)
+    return spec
 
 
-def size_from_direct_target(outer_top_diam, height, **kwargs):
-    """Nursery pot's own target outer dimensions, no container constraint."""
-    return resolve_pot(outer_top_diam=outer_top_diam, height=height, container_bottom_inner_diam=None, **kwargs)
+def size_from_container_simple(container_top_inner_diam, container_inner_depth, height=None, **kwargs):
+    """Decorative pot's inner top diameter + inner depth only — no bottom
+    diameter needed. A quicker alternative to size_from_container_inner for
+    when you can't easily measure (or estimate) the container's bottom
+    opening; the draft angle stays at its default/override value since
+    there's no known bottom constraint to auto-steepen against.
+    """
+    return size_from_container_inner(
+        container_top_inner_diam=container_top_inner_diam,
+        container_bottom_inner_diam=None,
+        container_inner_depth=container_inner_depth,
+        height=height,
+        **kwargs,
+    )
 
 
 def format_report(spec):
