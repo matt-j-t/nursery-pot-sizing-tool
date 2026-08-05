@@ -43,10 +43,25 @@ const AIR_SLOT_WIDTH_MM = 3.0; // within the fixed 2-4mm range
 const AIR_SLOT_HEIGHT_SPAN_MM = 30.0;
 const AIR_SLOT_ZLO_FRAC = 0.12; // band starts at 12% of pot height
 const AIR_SLOT_MAX_ZHI_FRAC = 0.5; // band must stay in the bottom half
-const AIR_SLOT_COUNT_DEFAULT = 4;
-const AIR_SLOT_MIN_GAP_MM = 1.5; // minimum wall material between adjacent slots
+const AIR_SLOT_MIN_COUNT = 2;
+const AIR_SLOT_MAX_COUNT = 12; // sanity cap even on a very large pot
+const AIR_SLOT_TARGET_GAP_MM = 18.0; // comfortable solid-wall spacing used to size the count
+const AIR_SLOT_MIN_GAP_MM = 1.5; // hard structural minimum — only used as a crowding safety net
 const AIR_SLOT_N_RINGS = 2; // just enough rings to bound the band; no taper to resolve
 const AIR_SLOT_MIN_BAND_MM = 10.0;
+
+// Base grooves — radial drainage/venting channels recessed into the
+// underside of the floor, one per drain hole, running from a central hub
+// out to the pot's outer edge (open there, so the channel stays exposed
+// to air even when the pot sits flush on a surface). Baked directly into
+// the bottom surface's height as a function of (r, theta) — same
+// cosine-taper technique as the lift notch, just swept over radius
+// instead of wall height. See geo.grooveOffsetAt.
+const GROOVE_HUB_RADIUS_MM = 15.0;
+const GROOVE_GAP_MM = 1.2; // how far the channel floor lifts off the bed at its raised plateau
+const GROOVE_RAMP_MM = 1.2; // radial run of the ramp up from the hub (rise==run, 45-deg safe)
+const GROOVE_HALF_WIDTH_MM = 4.0; // angular half-width, measured at the hub
+const GROOVE_MIN_ANNULUS_MM = 8.0; // minimum hubRadius..RBottomOuter span needed to bother
 
 const deg2rad = (d) => (d * Math.PI) / 180.0;
 
@@ -232,27 +247,57 @@ export function resolvePot({
     }
   }
   if (slotsOn) {
-    slotCount = AIR_SLOT_COUNT_DEFAULT;
-    // Widest point of each slot's taper is at the bottom of its band —
-    // check adjacent slots don't crowd there, at the outer wall's radius.
+    // Slot WIDTH is always fixed (2-4mm, see AIR_SLOT_WIDTH_MM) — but the
+    // COUNT is derived from the pot's circumference at the slot band, not a
+    // fixed default, the same way drain hole count/spacing is already
+    // derived from the floor's area above. Using the band's narrowest
+    // radius (its bottom, since the pot tapers wider going up) is the
+    // worst case for crowding.
     const radiusAtZLo = RBottomOuter + (RTopOuter - RBottomOuter) * (slotZLo / height);
-    let adjusted = false;
+    const circumferenceAtZLo = 2 * Math.PI * radiusAtZLo;
+    const period = AIR_SLOT_WIDTH_MM + AIR_SLOT_TARGET_GAP_MM; // one slot + a comfortable gap to the next
+    slotCount = Math.max(AIR_SLOT_MIN_COUNT, Math.min(AIR_SLOT_MAX_COUNT, Math.floor(circumferenceAtZLo / period)));
+    // Safety-net check (floor() above should already guarantee this, but
+    // verify with the same chord-length test used for drain holes in case
+    // of an unusual bottleneck elsewhere in the taper).
     while (
-      slotCount > 2 &&
+      slotCount > AIR_SLOT_MIN_COUNT &&
       2 * radiusAtZLo * Math.sin(Math.PI / slotCount) < AIR_SLOT_WIDTH_MM + AIR_SLOT_MIN_GAP_MM
     ) {
       slotCount -= 1;
-      adjusted = true;
     }
-    if (2 * radiusAtZLo * Math.sin(Math.PI / slotCount) < AIR_SLOT_WIDTH_MM + AIR_SLOT_MIN_GAP_MM) {
+    if (2 * radiusAtZLo * Math.sin(Math.PI / slotCount) < AIR_SLOT_WIDTH_MM) {
       warnings.push("Pot is too narrow to fit air slots with safe spacing between them — disabled.");
       slotsOn = false;
       slotCount = 0;
-    } else if (adjusted) {
-      notes.push(`Air slot count reduced to ${slotCount} so adjacent slots don't crowd on this pot's diameter.`);
+    } else {
+      notes.push(
+        `Air slot count set to ${slotCount}, based on the pot's circumference at the slot band ` +
+          `(keeps slots evenly spaced with at least ${AIR_SLOT_MIN_GAP_MM.toFixed(1)}mm between them).`
+      );
     }
   }
   const slotCenters = slotsOn ? Array.from({ length: slotCount }, (_, i) => (2 * Math.PI * i) / slotCount) : [];
+
+  // --- base grooves ---
+  // One channel per drain hole (same angular positions), so each hole
+  // sits inside its own channel — see grooveCenters below.
+  let groovesOn = nHoles > 0;
+  if (groovesOn && RBottomOuter - GROOVE_HUB_RADIUS_MM < GROOVE_MIN_ANNULUS_MM) {
+    warnings.push(
+      `Pot's bottom is too small for base grooves (needs at least ` +
+        `${(GROOVE_HUB_RADIUS_MM + GROOVE_MIN_ANNULUS_MM).toFixed(0)}mm outer radius) — disabled.`
+    );
+    groovesOn = false;
+  }
+  if (groovesOn && floorT - GROOVE_GAP_MM < MIN_PRINTABLE_FLOOR) {
+    notes.push(
+      `Base grooves thin the floor locally to ${(floorT - GROOVE_GAP_MM).toFixed(2)}mm at each channel ` +
+        `(floor thickness ${floorT.toFixed(2)}mm minus the ${GROOVE_GAP_MM.toFixed(1)}mm channel gap) — ` +
+        `increase floor thickness if this needs to stay above the usual ${MIN_PRINTABLE_FLOOR.toFixed(2)}mm minimum.`
+    );
+  }
+  const grooveCenters = groovesOn ? Array.from({ length: nHoles }, (_, i) => (2 * Math.PI * i) / nHoles) : [];
 
   return {
     height,
@@ -283,6 +328,12 @@ export function resolvePot({
     slotZLo,
     slotZHi,
     slotNRings: AIR_SLOT_N_RINGS,
+    groovesEnabled: groovesOn,
+    grooveCenters,
+    hubRadiusMM: GROOVE_HUB_RADIUS_MM,
+    grooveGapMM: GROOVE_GAP_MM,
+    grooveRampMM: GROOVE_RAMP_MM,
+    grooveHalfWidthMM: GROOVE_HALF_WIDTH_MM,
     warnings,
     notes,
   };
@@ -358,6 +409,9 @@ export function formatReport(spec) {
   }
   if (spec.airSlotsEnabled) {
     lines.push(`Air slots:             ${spec.slotCenters.length} x ${spec.slotWidthMM.toFixed(1)}mm`);
+  }
+  if (spec.groovesEnabled) {
+    lines.push(`Base grooves:          ${spec.grooveCenters.length}`);
   }
   return lines.join("\n");
 }

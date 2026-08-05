@@ -69,6 +69,20 @@ export function buildPotMesh(spec) {
     return cols;
   }
 
+  // Base grooves — radial channels recessed into the bottom cap's
+  // underside, baked in as a z-height warp (see geo.grooveOffsetAt /
+  // geo.warpCapZ). One channel per drain hole, at the same angles as the
+  // drain holes below, so each hole sits inside its own channel. Declared
+  // up here because it also needs to warp the outer wall's own bottom
+  // ring (ringBottomOuter, both branches below) — same "apply the same
+  // offset everywhere the two surfaces must stay seamless" pattern the
+  // lift notch already uses for its outer+inner walls.
+  const groovesOn = !!spec.groovesEnabled && (spec.grooveCenters || []).length > 0;
+  const grooveOpts = { gapMM: spec.grooveGapMM, rampMM: spec.grooveRampMM, halfWidthMM: spec.grooveHalfWidthMM };
+  const grooveZAt = (r, theta) => geo.grooveOffsetAt(r, theta, spec.grooveCenters, spec.hubRadiusMM, grooveOpts);
+  const warpRingZ = (ring) =>
+    groovesOn ? ring.map(([x, y, z]) => [x, y, z + grooveZAt(Math.hypot(x, y), Math.atan2(y, x))]) : ring;
+
   let ringBottomOuter, ringTopOuter, ringBottomInner, ringTopInner;
 
   if (hasNotch || hasSlots) {
@@ -104,7 +118,7 @@ export function buildPotMesh(spec) {
     // plain, un-notched taper, joined seamlessly to the grid above since
     // both use the identical base-taper formula at z=floorT.
     const radiusAtFloorT = RBottomOuter + (RTopOuter - RBottomOuter) * (floorT / H);
-    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
+    ringBottomOuter = warpRingZ(geo.ring3(RBottomOuter, 0.0, n));
     const ringFloorTOuter = geo.ring3(radiusAtFloorT, floorT, n);
     pieces.push(...geo.quadStrip(ringBottomOuter, ringFloorTOuter, true));
 
@@ -117,7 +131,7 @@ export function buildPotMesh(spec) {
     pieces.push(...geo.annulusCapFromRings(ringTopOuter, ringTopInner, true));
   } else {
     // 1) Outer wall, full height (continuous taper, covers floor skin + cavity wall)
-    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
+    ringBottomOuter = warpRingZ(geo.ring3(RBottomOuter, 0.0, n));
     ringTopOuter = geo.ring3(RTopOuter, H, n);
     pieces.push(...geo.quadStrip(ringBottomOuter, ringTopOuter, true));
 
@@ -144,21 +158,35 @@ export function buildPotMesh(spec) {
 
   // 5) Bottom cap
   if (nHoles > 0) {
-    pieces.push(...geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false));
+    const flatBottom = geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false);
+    pieces.push(...(groovesOn ? geo.warpCapZ(flatBottom, grooveZAt) : flatBottom));
   } else {
-    pieces.push(...geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false));
+    const flatBottom = geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false);
+    pieces.push(...(groovesOn ? geo.warpCapZ(flatBottom, grooveZAt) : flatBottom));
   }
 
-  // 6) Floor-top cap
+  // 6) Floor-top cap — always flat (grooves only touch the outward-facing
+  // bottom surface, not the soil-facing floor top).
   if (nHoles > 0) {
     pieces.push(...geo.discWithHoles3D(RInnerFloorTop, holeCenters, holeR, floorT, n, nHole, true));
   } else {
     pieces.push(...geo.flatDiscFan(RInnerFloorTop, floorT, n, 0, 0, true));
   }
 
-  // 7) Hole tunnel walls
+  // 7) Hole tunnel walls — bottom ring warped to match the (possibly
+  // grooved) bottom cap it meets; top ring stays flat at floorT.
   if (nHoles > 0) {
-    pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
+    if (groovesOn) {
+      for (const [hx, hy] of holeCenters) {
+        const ringTop = geo.ring3(holeR, floorT, nHole, hx, hy);
+        const ringBottom = geo.ring3(holeR, 0.0, nHole, hx, hy).map(([x, y, z]) => [
+          x, y, z + grooveZAt(Math.hypot(x, y), Math.atan2(y, x)),
+        ]);
+        pieces.push(...geo.quadStrip(ringBottom, ringTop, false));
+      }
+    } else {
+      pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
+    }
   }
 
   // No feet: the pot sits flat on its own floor (z=0) for reliable

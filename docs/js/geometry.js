@@ -344,7 +344,16 @@ export function wallGrid(radiusFn, zLevels, n, openColumnsFn = null) {
     const ring = [];
     for (let k = 0; k < n; k++) {
       const theta = (TWO_PI * k) / n;
-      const r = radiusFn(z, k, theta);
+      // radiusFn(z, theta) — same 2-arg convention as ringStack(). (Previously
+      // called as radiusFn(z, k, theta): outerRadiusFn/innerRadiusFn in
+      // potBuilder.js only declare (z, theta), so JS silently bound their
+      // `theta` parameter to the integer column index `k` instead of the
+      // real angle. Since notchOffsetAt wraps theta mod 2*PI, the notch's
+      // cosine bump replayed every ~6.28 columns — a repeating zigzag of
+      // small dips around the whole rim instead of one smooth arc at the
+      // real notch center. This is the root cause of the "triangular
+      // notches all around the rim" bug.)
+      const r = radiusFn(z, theta);
       ring.push([r * Math.cos(theta), r * Math.sin(theta), z]);
     }
     rings.push(ring);
@@ -556,6 +565,68 @@ export function manifoldCheck(triangles, eps = 1e-6) {
     watertight: boundaryEdges === 0 && nonmanifoldEdges === 0,
     isGenus0Closed: euler === 2 && boundaryEdges === 0 && nonmanifoldEdges === 0,
   };
+}
+
+// ---------------------------------------------------------------------
+// Base grooves — radial drainage/venting channels recessed into the
+// underside of the floor, baked directly into that surface's height as a
+// function of (r, theta) — same cosine-taper technique as the lift notch
+// (see notchAngularProfile/heightFade above), just swept over radius
+// instead of wall height, so — like the notch — it needs no
+// hole-stitching for the CHANNEL shape itself. The drain hole through
+// each channel is still a genuine through-hole, built with the existing
+// discWithHoles3D/holeTunnelWalls mechanism (see potBuilder.js), just
+// with its bottom endpoint warped up to match the local channel height.
+// ---------------------------------------------------------------------
+
+// 0 at r <= hubRadius (flush with the hub/bed), ramping via cosine taper
+// to 1 over the next `rampMM` of radius (rise==run over rampMM, so this
+// never exceeds 45 degrees from vertical), then staying at 1 the rest of
+// the way to the pot's edge.
+export function grooveRadialTaper(r, hubRadius, rampMM = 1.2) {
+  const d = Math.max(0, r - hubRadius);
+  return 1 - cosTaper(d, rampMM);
+}
+
+// Combined channel height (mm, positive = lifted off the bed) at (r,
+// theta) from every groove in `grooveCenters` (array of theta values in
+// radians, one per drain hole). Angular half-width is measured in mm AT
+// the hub radius (matching the notch's "measured against a fixed
+// reference radius" convention) and held constant in angle beyond that,
+// so each channel is a wedge that widens in mm as it runs outward.
+export function grooveOffsetAt(r, theta, grooveCenters, hubRadius, opts = {}) {
+  if (!grooveCenters || grooveCenters.length === 0) return 0;
+  const { gapMM = 1.2, rampMM = 1.2, halfWidthMM = 4.0 } = opts;
+  const radial = grooveRadialTaper(r, hubRadius, rampMM);
+  if (radial === 0) return 0;
+  const halfWidthAngle = halfWidthMM / hubRadius;
+  let tangential = 0;
+  for (const c of grooveCenters) {
+    let d = theta - c;
+    d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to [-pi, pi]
+    tangential += cosTaper(d, halfWidthAngle);
+  }
+  return gapMM * radial * tangential;
+}
+
+// Adds an (r,theta)-dependent z offset to every vertex in a flat cap's
+// triangle list — used to bake base grooves into the bottom cap (and the
+// bottom ring of each drain hole's tunnel) without needing a dedicated
+// hole-stitched grid: the cap's existing (x,y) positions and hole
+// boundaries are unchanged, only z is displaced upward by zFn(r,theta).
+export function warpCapZ(triangles, zFn) {
+  const cache = new Map();
+  function warp(p) {
+    const key = `${p[0].toFixed(5)}_${p[1].toFixed(5)}_${p[2].toFixed(5)}`;
+    let w = cache.get(key);
+    if (w) return w;
+    const r = Math.hypot(p[0], p[1]);
+    const theta = Math.atan2(p[1], p[0]);
+    w = [p[0], p[1], p[2] + zFn(r, theta)];
+    cache.set(key, w);
+    return w;
+  }
+  return triangles.map(([a, b, c]) => [warp(a), warp(b), warp(c)]);
 }
 
 export function signedVolume(triangles) {
