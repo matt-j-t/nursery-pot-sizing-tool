@@ -21,6 +21,7 @@ const els = {
   holes: $("holes"), holeDiam: $("holeDiam"),
   nSeg: $("nSeg"),
   liftNotchCount: $("liftNotchCount"),
+  airSlotsEnabled: $("airSlotsEnabled"),
   generateBtn: $("generateBtn"),
   resultsSection: $("resultsSection"),
   reportPre: $("reportPre"),
@@ -73,6 +74,7 @@ function readAdvanced() {
     drainHoleDiam: num(els.holeDiam, calc.DEFAULTS.drainHoleDiam),
     nSeg: Math.round(num(els.nSeg, calc.DEFAULTS.nSeg)),
     liftNotchCount: Math.round(num(els.liftNotchCount, calc.DEFAULTS.liftNotchCount)),
+    airSlotsEnabled: els.airSlotsEnabled.checked,
   };
 }
 
@@ -275,6 +277,7 @@ function buildStateParams(mode, advanced) {
   p.set("holeD", advanced.drainHoleDiam);
   p.set("seg", advanced.nSeg);
   p.set("notch", advanced.liftNotchCount);
+  p.set("slots", advanced.airSlotsEnabled ? "1" : "0");
   return p;
 }
 
@@ -300,6 +303,7 @@ function applyStateFromURL() {
   if (p.has("holeD")) els.holeDiam.value = p.get("holeD");
   if (p.has("seg")) els.nSeg.value = p.get("seg");
   if (p.has("notch")) els.liftNotchCount.value = p.get("notch");
+  if (p.has("slots")) els.airSlotsEnabled.checked = p.get("slots") === "1";
   return true;
 }
 
