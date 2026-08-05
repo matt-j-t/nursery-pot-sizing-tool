@@ -65,6 +65,28 @@ Python 3 + numpy.
   draft angle so capped that the pot won't reach the container's floor) before generating
   geometry
 
+## Lift notches and air slots (website only)
+
+Two optional features in the website's advanced options, both ported from a Blender-validated
+reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
+
+- **Lift notches** (0/1/2, 180° apart if 2) — a fixed 20mm-wide, 6mm-deep finger recess baked
+  into the rim, fading out over the top 18mm of wall. Fixed size regardless of pot size (sized
+  to a finger, not the pot). The same recess is applied to both the outer and inner wall
+  surfaces so wall thickness stays constant through the notch rather than breaching into the
+  cavity.
+- **Air slots** — vertical root air-pruning slots, fixed 2–4mm wide, positioned only in the
+  bottom half of the pot, evenly spaced (auto-reduced or disabled if the pot is too small/short
+  to fit them safely). Built as a tapering "shrinking open column" through the wall grid and
+  sealed by a generic boundary-loop stitcher (`docs/js/geometry.js`: `wallGrid`,
+  `findGridHoleLoops`, `stitchWallGridHoles`) that explicitly detects and throws on any
+  "bowtie" (two holes sharing a vertex) rather than silently producing broken geometry.
+
+Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (both features on
+and off, various sizes/resolutions) are watertight — every edge shared by exactly two faces, no
+open or non-manifold edges. This is the regression test for the multi-hole topology class of bug
+described in the spec above.
+
 ## Notes on the STL-upload cavity detection
 
 The "derive from STL" path slices the uploaded mesh with horizontal planes and reads where the
