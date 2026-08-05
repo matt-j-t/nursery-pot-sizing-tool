@@ -110,6 +110,14 @@ main {
   color: var(--muted);
 }
 
+.field-grid label.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+}
+.field-grid label.checkbox-field input { margin: 0; }
+
 input[type="number"], input[type="text"] {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
