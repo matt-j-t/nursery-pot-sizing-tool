@@ -569,64 +569,73 @@ export function manifoldCheck(triangles, eps = 1e-6) {
 
 // ---------------------------------------------------------------------
 // Base grooves — radial drainage/venting channels recessed into the
-// underside of the floor, baked directly into that surface's height as a
-// function of (r, theta) — same cosine-taper technique as the lift notch
-// (see notchAngularProfile/heightFade above), just swept over radius
-// instead of wall height, so — like the notch — it needs no
-// hole-stitching for the CHANNEL shape itself. The drain hole through
-// each channel is still a genuine through-hole, built with the existing
-// discWithHoles3D/holeTunnelWalls mechanism (see potBuilder.js), just
-// with its bottom endpoint warped up to match the local channel height.
+// underside of the floor. Math ported verbatim from the tested reference
+// docs/features-wip/pot-floor.mjs (mm-converted; the reference uses
+// meters) — do not re-derive this: a first attempt warped a flat
+// ear-clip-triangulated cap's z by an (r,theta) height field, but
+// ear-clipping only places vertices on the outer boundary and hole loops,
+// nothing in the interior, so there was no real grid for the ramp to sit
+// on — the interior got filled by arbitrary long fan triangles, which is
+// what produced the spiky/chaotic pattern instead of clean channels.
+// pot-floor.mjs fixes this by giving the floor its own proper radial x
+// angular GRID (same idea as the wall's ring loft in ringStack above) —
+// see radialGrid() below, which reuses that exact same grid shape so it
+// can plug into the already-proven wallGridFaces/findGridHoleLoops/
+// stitchWallGridHoles hole-cutting pipeline for the drain holes.
 // ---------------------------------------------------------------------
 
-// 0 at r <= hubRadius (flush with the hub/bed), ramping via cosine taper
-// to 1 over the next `rampMM` of radius (rise==run over rampMM, so this
-// never exceeds 45 degrees from vertical), then staying at 1 the rest of
-// the way to the pot's edge.
+// 0 at r <= hubRadius (flush with the hub/bed), a LINEAR ramp to 1 over
+// the next `rampMM` of radius (rise==run over rampMM, exactly 45 degrees
+// by construction — matches pot-floor.mjs's radialTaper() exactly, not a
+// cosine ease like the lift notch uses), then 1.0 the rest of the way to
+// the pot's edge.
 export function grooveRadialTaper(r, hubRadius, rampMM = 1.2) {
-  const d = Math.max(0, r - hubRadius);
-  return 1 - cosTaper(d, rampMM);
+  if (r <= hubRadius) return 0.0;
+  if (r >= hubRadius + rampMM) return 1.0;
+  return (r - hubRadius) / rampMM;
 }
 
 // Combined channel height (mm, positive = lifted off the bed) at (r,
 // theta) from every groove in `grooveCenters` (array of theta values in
-// radians, one per drain hole). Angular half-width is measured in mm AT
-// the hub radius (matching the notch's "measured against a fixed
-// reference radius" convention) and held constant in angle beyond that,
-// so each channel is a wedge that widens in mm as it runs outward.
+// radians, one per drain hole). Matches pot-floor.mjs's grooveBottomZ()
+// exactly: angular half-width is a fixed angle (not re-derived per
+// radius) and multiple grooves combine via MAX (not sum), so overlapping
+// tapers can never double up past the intended depth.
 export function grooveOffsetAt(r, theta, grooveCenters, hubRadius, opts = {}) {
   if (!grooveCenters || grooveCenters.length === 0) return 0;
-  const { gapMM = 1.2, rampMM = 1.2, halfWidthMM = 4.0 } = opts;
+  const { gapMM = 1.2, rampMM = 1.2, halfWidthAngle = 0.27 } = opts;
   const radial = grooveRadialTaper(r, hubRadius, rampMM);
-  if (radial === 0) return 0;
-  const halfWidthAngle = halfWidthMM / hubRadius;
-  let tangential = 0;
+  if (radial <= 0) return 0;
+  let best = 0;
   for (const c of grooveCenters) {
     let d = theta - c;
     d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to [-pi, pi]
-    tangential += cosTaper(d, halfWidthAngle);
+    const t = cosTaper(d, halfWidthAngle);
+    if (t > best) best = t;
   }
-  return gapMM * radial * tangential;
+  return gapMM * radial * best;
 }
 
-// Adds an (r,theta)-dependent z offset to every vertex in a flat cap's
-// triangle list — used to bake base grooves into the bottom cap (and the
-// bottom ring of each drain hole's tunnel) without needing a dedicated
-// hole-stitched grid: the cap's existing (x,y) positions and hole
-// boundaries are unchanged, only z is displaced upward by zFn(r,theta).
-export function warpCapZ(triangles, zFn) {
-  const cache = new Map();
-  function warp(p) {
-    const key = `${p[0].toFixed(5)}_${p[1].toFixed(5)}_${p[2].toFixed(5)}`;
-    let w = cache.get(key);
-    if (w) return w;
-    const r = Math.hypot(p[0], p[1]);
-    const theta = Math.atan2(p[1], p[0]);
-    w = [p[0], p[1], p[2] + zFn(r, theta)];
-    cache.set(key, w);
-    return w;
+// A stack of rings swept over RADIUS instead of z (mirrors wallGrid
+// exactly, just with the loop variable feeding (x,y) instead of z, and
+// zFn(r,theta) giving the height instead of radiusFn(z,theta) giving the
+// radius) — used for the grooved floor. Structurally identical to
+// wallGrid's { rings, openSets, n } shape, so wallGridFaces,
+// findGridHoleLoops, and stitchWallGridHoles all work on it unchanged.
+export function radialGrid(zFn, rLevels, n, openColumnsFn = null) {
+  const rings = [];
+  const openSets = [];
+  for (const r of rLevels) {
+    const ring = [];
+    for (let k = 0; k < n; k++) {
+      const theta = (TWO_PI * k) / n;
+      const z = zFn(r, theta);
+      ring.push([r * Math.cos(theta), r * Math.sin(theta), z]);
+    }
+    rings.push(ring);
+    openSets.push(openColumnsFn ? openColumnsFn(r) : new Set());
   }
-  return triangles.map(([a, b, c]) => [warp(a), warp(b), warp(c)]);
+  return { rings, openSets, n };
 }
 
 export function signedVolume(triangles) {

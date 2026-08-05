@@ -69,16 +69,21 @@ export function buildPotMesh(spec) {
     return cols;
   }
 
-  // Base grooves — radial channels recessed into the bottom cap's
-  // underside, baked in as a z-height warp (see geo.grooveOffsetAt /
-  // geo.warpCapZ). One channel per drain hole, at the same angles as the
-  // drain holes below, so each hole sits inside its own channel. Declared
-  // up here because it also needs to warp the outer wall's own bottom
-  // ring (ringBottomOuter, both branches below) — same "apply the same
-  // offset everywhere the two surfaces must stay seamless" pattern the
-  // lift notch already uses for its outer+inner walls.
+  // Base grooves — radial channels recessed into the floor's underside,
+  // built as their own radial x angular grid (see geo.radialGrid, ported
+  // from docs/features-wip/pot-floor.mjs) rather than warping a flat cap.
+  // One channel per drain hole, at the same angles as the drain holes
+  // below. grooveZAt is also needed up here to warp the outer wall's own
+  // bottom ring (ringBottomOuter, both branches below) so it stays
+  // seamless with the grooved floor — same "apply the same offset
+  // everywhere the two surfaces must stay seamless" pattern the lift
+  // notch already uses for its outer+inner walls.
   const groovesOn = !!spec.groovesEnabled && (spec.grooveCenters || []).length > 0;
-  const grooveOpts = { gapMM: spec.grooveGapMM, rampMM: spec.grooveRampMM, halfWidthMM: spec.grooveHalfWidthMM };
+  const grooveOpts = {
+    gapMM: spec.grooveGapMM,
+    rampMM: spec.grooveRampMM,
+    halfWidthAngle: spec.grooveHalfWidthMM / spec.hubRadiusMM,
+  };
   const grooveZAt = (r, theta) => geo.grooveOffsetAt(r, theta, spec.grooveCenters, spec.hubRadiusMM, grooveOpts);
   const warpRingZ = (ring) =>
     groovesOn ? ring.map(([x, y, z]) => [x, y, z + grooveZAt(Math.hypot(x, y), Math.atan2(y, x))]) : ring;
@@ -156,35 +161,81 @@ export function buildPotMesh(spec) {
     }
   }
 
-  // 5) Bottom cap
-  if (nHoles > 0) {
-    const flatBottom = geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false);
-    pieces.push(...(groovesOn ? geo.warpCapZ(flatBottom, grooveZAt) : flatBottom));
-  } else {
-    const flatBottom = geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false);
-    pieces.push(...(groovesOn ? geo.warpCapZ(flatBottom, grooveZAt) : flatBottom));
-  }
+  if (groovesOn) {
+    // Floor built as its own radial x angular grid (ported from
+    // docs/features-wip/pot-floor.mjs) instead of warping a flat
+    // ear-clip-triangulated cap — see the comment above geo.radialGrid
+    // for why the flat-cap approach produced chaotic fan triangulation.
+    const hubR = spec.hubRadiusMM;
+    const rampMM = spec.grooveRampMM;
 
-  // 6) Floor-top cap — always flat (grooves only touch the outward-facing
-  // bottom surface, not the soil-facing floor top).
-  if (nHoles > 0) {
-    pieces.push(...geo.discWithHoles3D(RInnerFloorTop, holeCenters, holeR, floorT, n, nHole, true));
-  } else {
-    pieces.push(...geo.flatDiscFan(RInnerFloorTop, floorT, n, 0, 0, true));
-  }
-
-  // 7) Hole tunnel walls — bottom ring warped to match the (possibly
-  // grooved) bottom cap it meets; top ring stays flat at floorT.
-  if (nHoles > 0) {
-    if (groovesOn) {
-      for (const [hx, hy] of holeCenters) {
-        const ringTop = geo.ring3(holeR, floorT, nHole, hx, hy);
-        const ringBottom = geo.ring3(holeR, 0.0, nHole, hx, hy).map(([x, y, z]) => [
-          x, y, z + grooveZAt(Math.hypot(x, y), Math.atan2(y, x)),
-        ]);
-        pieces.push(...geo.quadStrip(ringBottom, ringTop, false));
+    // A grid cell (ring at radius r, column k) is "open" if that cell's
+    // actual (x,y) position falls within a drain hole's radius — a direct
+    // 2D circle test on the grid (holes are localized in both r and
+    // theta, unlike the air slots' full-band angular test).
+    function holeOpenColumnsAtR(r) {
+      const cols = new Set();
+      for (let k = 0; k < n; k++) {
+        const theta = (2 * Math.PI * k) / n;
+        const x = r * Math.cos(theta), y = r * Math.sin(theta);
+        for (const [hx, hy] of holeCenters) {
+          if (Math.hypot(x - hx, y - hy) < holeR) {
+            cols.add(k);
+            break;
+          }
+        }
       }
+      return cols;
+    }
+
+    // r-levels: hub, end of ramp, and RInnerFloorTop (where the top
+    // surface stops — matching where the original flat floor-top cap
+    // ended and the inner wall begins), plus extra rings bracketing each
+    // drain hole's radial footprint so the hole has an actual
+    // ring-to-ring step to be cut out of (a hole positioned mid-span
+    // inside one long quad strip could never be marked "open").
+    const holeBracketLevels = [];
+    for (const [hx, hy] of holeCenters) {
+      const rc = Math.hypot(hx, hy);
+      holeBracketLevels.push(Math.max(hubR, rc - holeR * 1.3), rc + holeR * 1.3);
+    }
+    const rLevelsShared = geo
+      .mergeZLevels([hubR, hubR + rampMM, RInnerFloorTop], holeBracketLevels)
+      .filter((r) => r <= RInnerFloorTop + 1e-6);
+    const rLevelsOuter = geo.mergeZLevels(rLevelsShared, [RBottomOuter]);
+
+    const outerFloorGrid = geo.radialGrid(grooveZAt, rLevelsOuter, n, holeOpenColumnsAtR);
+    const innerFloorGrid = geo.radialGrid(() => floorT, rLevelsShared, n, holeOpenColumnsAtR);
+
+    pieces.push(...geo.wallGridFaces(outerFloorGrid, false));
+    pieces.push(...geo.wallGridFaces(innerFloorGrid, true));
+    // Seals every drain hole loop found inside this grid (the grid's own
+    // inner/outer edge rings — hub and RBottomOuter/RInnerFloorTop — are
+    // excluded automatically, same as the wall's slot stitching above).
+    pieces.push(...geo.stitchWallGridHoles(outerFloorGrid, innerFloorGrid));
+
+    // Hub fans — the single legitimate fan point in this construction
+    // (see pot-floor.mjs comment): bottom flush with the bed, top flush
+    // with the floor's soil-facing surface.
+    pieces.push(...geo.flatDiscFan(hubR, 0.0, n, 0, 0, false));
+    pieces.push(...geo.flatDiscFan(hubR, floorT, n, 0, 0, true));
+  } else {
+    // 5) Bottom cap
+    if (nHoles > 0) {
+      pieces.push(...geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false));
     } else {
+      pieces.push(...geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false));
+    }
+
+    // 6) Floor-top cap
+    if (nHoles > 0) {
+      pieces.push(...geo.discWithHoles3D(RInnerFloorTop, holeCenters, holeR, floorT, n, nHole, true));
+    } else {
+      pieces.push(...geo.flatDiscFan(RInnerFloorTop, floorT, n, 0, 0, true));
+    }
+
+    // 7) Hole tunnel walls
+    if (nHoles > 0) {
       pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
     }
   }
