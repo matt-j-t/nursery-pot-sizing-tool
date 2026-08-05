@@ -75,12 +75,13 @@ reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
   to a finger, not the pot). The same recess is applied to both the outer and inner wall
   surfaces so wall thickness stays constant through the notch rather than breaching into the
   cavity.
-- **Air slots** — vertical root air-pruning slots, fixed 2–4mm wide, positioned only in the
-  bottom half of the pot, evenly spaced (auto-reduced or disabled if the pot is too small/short
-  to fit them safely). Built as a tapering "shrinking open column" through the wall grid and
-  sealed by a generic boundary-loop stitcher (`docs/js/geometry.js`: `wallGrid`,
-  `findGridHoleLoops`, `stitchWallGridHoles`) that explicitly detects and throws on any
-  "bowtie" (two holes sharing a vertex) rather than silently producing broken geometry.
+- **Air slots** — vertical root air-pruning slots, fixed constant width (2–4mm, held the same
+  top to bottom of the slot — no taper), positioned only in the bottom half of the pot, evenly
+  spaced (auto-reduced or disabled if the pot is too small/short to fit them safely). Built as
+  a rectangular open-column region through the wall grid and sealed by a generic boundary-loop
+  stitcher (`docs/js/geometry.js`: `wallGrid`, `findGridHoleLoops`, `stitchWallGridHoles`) that
+  explicitly detects and throws on any "bowtie" (two holes sharing a vertex) rather than
+  silently producing broken geometry.
 
 Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (both features on
 and off, various sizes/resolutions) are watertight — every edge shared by exactly two faces, no
