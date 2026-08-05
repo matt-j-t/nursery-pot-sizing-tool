@@ -191,13 +191,28 @@ export function buildPotMesh(spec) {
     // r-levels: hub, end of ramp, and RInnerFloorTop (where the top
     // surface stops — matching where the original flat floor-top cap
     // ended and the inner wall begins), plus extra rings bracketing each
-    // drain hole's radial footprint so the hole has an actual
-    // ring-to-ring step to be cut out of (a hole positioned mid-span
-    // inside one long quad strip could never be marked "open").
+    // drain hole's radial footprint so the hole has actual ring-to-ring
+    // steps to be cut out of.
+    //
+    // A ring EXACTLY at rc +/- holeR only touches the hole's circle at a
+    // single point (distance == holeR there, not < holeR), so it always
+    // computes an EMPTY open-column set — placing the brackets there (or
+    // further out) means no ring ever has an open column and the hole
+    // never gets cut at all. The brackets need to sit just outside the
+    // circle (kept fully closed, for a clean edge) AND there need to be
+    // interior rings strictly inside it (rc +/- up to ~0.9*holeR) so the
+    // open-column test actually finds a nonzero opening at several
+    // consecutive rings, tapering the cut in toward rc like facets on a
+    // polygon approximating a circle.
     const holeBracketLevels = [];
+    const nHoleRings = 5;
     for (const [hx, hy] of holeCenters) {
       const rc = Math.hypot(hx, hy);
-      holeBracketLevels.push(Math.max(hubR, rc - holeR * 1.3), rc + holeR * 1.3);
+      holeBracketLevels.push(Math.max(hubR, rc - holeR * 1.15), rc + holeR * 1.15);
+      for (let i = 0; i <= nHoleRings; i++) {
+        const r = rc - holeR * 0.9 + (holeR * 1.8) * (i / nHoleRings);
+        holeBracketLevels.push(Math.max(hubR, r));
+      }
     }
     const rLevelsShared = geo
       .mergeZLevels([hubR, hubR + rampMM, RInnerFloorTop], holeBracketLevels)
