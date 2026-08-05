@@ -36,23 +36,33 @@ export function buildPotMesh(spec) {
   const hasSlots = slotCenters.length > 0;
   const slotZLo = spec.slotZLo, slotZHi = spec.slotZHi;
 
+  // Constant-width rectangular through-slot: the open-column set is
+  // computed ONCE (from the taper radius at the band's vertical midpoint)
+  // and reused unchanged at every ring inside [slotZLo, slotZHi]. Earlier
+  // this shrank column-by-column from full width to a near-zero "sliver"
+  // as z rose through the band (a self-capping taper) — but with a
+  // discrete column grid, each ring where the column count dropped by one
+  // produced a small stair-step ledge, which is what rendered as a
+  // pointed/triangular, toothed-looking edge instead of a clean slot. A
+  // slot only 2-4mm wide is well within safe unsupported-bridge distance
+  // for FDM, so there's no need to taper it shut at all — a flat
+  // rectangular opening prints fine and is far simpler.
+  const slotColCount = (() => {
+    if (!hasSlots) return 0;
+    const zMid = (slotZLo + slotZHi) / 2;
+    const radiusAtMid = RBottomOuter + (RTopOuter - RBottomOuter) * (zMid / H);
+    const colWidthMM = radiusAtMid * (2 * Math.PI / n);
+    return Math.max(1, Math.round(spec.slotWidthMM / colWidthMM));
+  })();
+  const slotColHalfSpan = Math.floor((slotColCount - 1) / 2);
+  const slotCenterKs = slotCenters.map((centerTheta) => Math.round((centerTheta / (2 * Math.PI)) * n));
+
   function slotOpenColumnsAt(z) {
     const cols = new Set();
     if (!hasSlots) return cols;
     if (z < slotZLo - 1e-6 || z > slotZHi + 1e-6) return cols;
-    const t = slotZHi > slotZLo ? (z - slotZLo) / (slotZHi - slotZLo) : 0; // 0 at bottom of band, 1 at top
-    const halfWidthMM = (spec.slotWidthMM / 2) * (1 - t) + (spec.slotSliverMM / 2) * t;
-    // Column index math always uses the OUTER taper radius (not notch-
-    // offset, not inner radius) as its reference, so the outer and inner
-    // grids get IDENTICAL open-column sets — required for the stitcher to
-    // connect them 1:1, and also what keeps every slot's angular width
-    // consistent regardless of which wall it's cut through.
-    const radiusHere = RBottomOuter + (RTopOuter - RBottomOuter) * (z / H);
-    const halfAngle = halfWidthMM / radiusHere;
-    const colHalfSpan = Math.max(1, Math.round(halfAngle / (2 * Math.PI / n)));
-    for (const centerTheta of slotCenters) {
-      const centerK = Math.round((centerTheta / (2 * Math.PI)) * n);
-      for (let dk = -colHalfSpan; dk <= colHalfSpan; dk++) {
+    for (const centerK of slotCenterKs) {
+      for (let dk = -slotColHalfSpan; dk <= slotColHalfSpan; dk++) {
         cols.add(((centerK + dk) % n + n) % n);
       }
     }

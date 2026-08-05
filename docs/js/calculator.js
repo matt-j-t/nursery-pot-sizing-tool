@@ -10,7 +10,7 @@ export const DEFAULTS = {
   heightClearance: 5.0,
   drainHoleCount: 8,
   drainHoleDiam: 6.0,
-  nSeg: 96,
+  nSeg: 144,
   liftNotchCount: 0,
   airSlotsEnabled: false,
 };
@@ -34,16 +34,18 @@ const NOTCH_FADE_SPAN_MM = 18.0;
 const NOTCH_MIN_WALL_SPAN_MM = 8.0;
 
 // Air slots — vertical side slots for root air-pruning, bottom half of
-// the pot only. Width is fixed regardless of pot size (soil retention
-// depends on particle size, not pot size), clamped to 2-4mm.
+// the pot only. Constant-width rectangular through-slots (no taper) —
+// width is fixed regardless of pot size (soil retention depends on
+// particle size, not pot size), clamped to 2-4mm, and held constant top
+// to bottom of the slot's own band so it prints as a clean rectangle
+// rather than a pointed/tapered opening.
 const AIR_SLOT_WIDTH_MM = 3.0; // within the fixed 2-4mm range
-const AIR_SLOT_SLIVER_MM = 0.4; // near-zero width at the top of the taper
 const AIR_SLOT_HEIGHT_SPAN_MM = 30.0;
 const AIR_SLOT_ZLO_FRAC = 0.12; // band starts at 12% of pot height
 const AIR_SLOT_MAX_ZHI_FRAC = 0.5; // band must stay in the bottom half
-const AIR_SLOT_COUNT_DEFAULT = 8;
+const AIR_SLOT_COUNT_DEFAULT = 4;
 const AIR_SLOT_MIN_GAP_MM = 1.5; // minimum wall material between adjacent slots
-const AIR_SLOT_N_RINGS = 6;
+const AIR_SLOT_N_RINGS = 2; // just enough rings to bound the band; no taper to resolve
 const AIR_SLOT_MIN_BAND_MM = 10.0;
 
 const deg2rad = (d) => (d * Math.PI) / 180.0;
@@ -278,7 +280,6 @@ export function resolvePot({
     airSlotsEnabled: slotsOn,
     slotCenters,
     slotWidthMM: AIR_SLOT_WIDTH_MM,
-    slotSliverMM: AIR_SLOT_SLIVER_MM,
     slotZLo,
     slotZHi,
     slotNRings: AIR_SLOT_N_RINGS,
