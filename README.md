@@ -65,9 +65,9 @@ Python 3 + numpy.
   draft angle so capped that the pot won't reach the container's floor) before generating
   geometry
 
-## Lift notches and air slots (website only)
+## Lift notches, air slots, and base grooves (website only)
 
-Two optional features in the website's advanced options, both ported from a Blender-validated
+Three optional features in the website's advanced options, all ported from a Blender-validated
 reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
 
 - **Lift notches** (0/1/2, 180° apart if 2) — a fixed 20mm-wide, 6mm-deep finger recess baked
@@ -76,17 +76,32 @@ reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
   surfaces so wall thickness stays constant through the notch rather than breaching into the
   cavity.
 - **Air slots** — vertical root air-pruning slots, fixed constant width (2–4mm, held the same
-  top to bottom of the slot — no taper), positioned only in the bottom half of the pot, evenly
-  spaced (auto-reduced or disabled if the pot is too small/short to fit them safely). Built as
-  a rectangular open-column region through the wall grid and sealed by a generic boundary-loop
-  stitcher (`docs/js/geometry.js`: `wallGrid`, `findGridHoleLoops`, `stitchWallGridHoles`) that
-  explicitly detects and throws on any "bowtie" (two holes sharing a vertex) rather than
-  silently producing broken geometry.
+  top to bottom of the slot — no taper), positioned only in the bottom half of the pot. Count is
+  derived from the pot's circumference at the slot band (more slots on a bigger pot), not a
+  fixed number. Built as a rectangular open-column region through the wall grid and sealed by a
+  generic boundary-loop stitcher (`docs/js/geometry.js`: `wallGrid`, `findGridHoleLoops`,
+  `stitchWallGridHoles`) that explicitly detects and throws on any "bowtie" (two holes sharing a
+  vertex) rather than silently producing broken geometry.
+- **Base grooves** — automatic whenever there are drain holes: one radial channel per drain
+  hole, recessed into the floor's underside and running from a 15mm hub out to the pot's outer
+  edge, so water reaches the drain holes and the pot doesn't seal flat against a surface. Like
+  the lift notch, this is baked directly into the bottom surface's height as a function of
+  (radius, angle) — a cosine ramp from flush-with-the-hub up to a 1.2mm-raised plateau over the
+  first 1.2mm of radius, then flat out to the edge — so it needs no hole-stitching for the
+  channel shape itself; only the drain hole through each channel is a genuine through-hole,
+  using the existing hole mechanism with its bottom ring warped to match.
 
-Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (both features on
-and off, various sizes/resolutions) are watertight — every edge shared by exactly two faces, no
-open or non-manifold edges. This is the regression test for the multi-hole topology class of bug
-described in the spec above.
+Both the lift notch and the base groove correct for a real bug found during development: an
+internal grid-building function (`wallGrid`) was calling its radius callback with the wrong
+argument order, so the notch's angle parameter silently received an integer column index instead
+of a real angle — producing a repeating zigzag of small triangular dips around the entire rim
+instead of one smooth, localized arc. Fixed by matching the call convention already used
+elsewhere (`ringStack`).
+
+Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (features on and
+off in combination, various sizes/resolutions) are watertight — every edge shared by exactly two
+faces, no open or non-manifold edges. This is the regression test for the multi-hole topology
+class of bug described in the spec above.
 
 ## Notes on the STL-upload cavity detection
 
