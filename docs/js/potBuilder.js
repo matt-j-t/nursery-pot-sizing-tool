@@ -1,0 +1,171 @@
+// Assembles the full nursery-pot triangle list from a calculator spec.
+// Direct port of pot_builder.py.
+import * as geo from "./geometry.js";
+
+export function buildPotMesh(spec) {
+  const n = spec.nSeg;
+  const nHole = 16;
+
+  const RTopOuter = spec.outerTopDiam / 2.0;
+  const RBottomOuter = spec.outerBottomDiam / 2.0;
+  const RInnerFloorTop = spec.innerBottomDiam / 2.0;
+  const RTopInner = spec.innerTopDiam / 2.0;
+  const H = spec.height;
+  const floorT = spec.floorT;
+
+  const pieces = [];
+
+  // Lift notch(es) — baked into the outer AND inner wall radius formulas
+  // (same offset applied to both, so the wall thickness stays constant
+  // through the notch instead of the outer dimple breaching into the
+  // cavity). See geo.notchOffsetAt / docs/features-wip/pot-body.mjs.
+  const notchCenters = spec.notchCenters || [];
+  const notchOpts = {
+    halfWidthMM: spec.notchHalfWidthMM,
+    recessMM: spec.notchRecessMM,
+    fadeSpanMM: spec.notchFadeSpanMM,
+  };
+  const hasNotch = notchCenters.length > 0;
+
+  // Air slots — genuine through-holes, built as omitted cells in the wall
+  // grid (a shrinking open-column-per-ring tapering "pyramid", so the
+  // hole self-caps with small stepped faces instead of needing a bridged
+  // roof) and closed with the generic boundary-loop stitcher. See
+  // docs/features-wip/pot-slots-wip.mjs / nursery-pot-features-spec.md.
+  const slotCenters = spec.airSlotsEnabled ? spec.slotCenters || [] : [];
+  const hasSlots = slotCenters.length > 0;
+  const slotZLo = spec.slotZLo, slotZHi = spec.slotZHi;
+
+  function slotOpenColumnsAt(z) {
+    const cols = new Set();
+    if (!hasSlots) return cols;
+    if (z < slotZLo - 1e-6 || z > slotZHi + 1e-6) return cols;
+    const t = slotZHi > slotZLo ? (z - slotZLo) / (slotZHi - slotZLo) : 0; // 0 at bottom of band, 1 at top
+    const halfWidthMM = (spec.slotWidthMM / 2) * (1 - t) + (spec.slotSliverMM / 2) * t;
+    // Column index math always uses the OUTER taper radius (not notch-
+    // offset, not inner radius) as its reference, so the outer and inner
+    // grids get IDENTICAL open-column sets — required for the stitcher to
+    // connect them 1:1, and also what keeps every slot's angular width
+    // consistent regardless of which wall it's cut through.
+    const radiusHere = RBottomOuter + (RTopOuter - RBottomOuter) * (z / H);
+    const halfAngle = halfWidthMM / radiusHere;
+    const colHalfSpan = Math.max(1, Math.round(halfAngle / (2 * Math.PI / n)));
+    for (const centerTheta of slotCenters) {
+      const centerK = Math.round((centerTheta / (2 * Math.PI)) * n);
+      for (let dk = -colHalfSpan; dk <= colHalfSpan; dk++) {
+        cols.add(((centerK + dk) % n + n) % n);
+      }
+    }
+    return cols;
+  }
+
+  let ringBottomOuter, ringTopOuter, ringBottomInner, ringTopInner;
+
+  if (hasNotch || hasSlots) {
+    // floorT..H is shared, ring-for-ring, between the outer and inner
+    // grids — required so the generic stitcher can connect a hole's
+    // outer-surface boundary loop directly to the matching inner-surface
+    // vertices by (ring, column) index, with no spatial search needed.
+    const sharedZs = geo.mergeZLevels(
+      geo.notchZLevels(floorT, H, notchOpts.fadeSpanMM),
+      hasSlots ? geo.slotZLevels(slotZLo, slotZHi, spec.slotNRings) : []
+    );
+    const outerRadiusFn = (z, theta) => {
+      const base = RBottomOuter + (RTopOuter - RBottomOuter) * (z / H);
+      return base + geo.notchOffsetAt(theta, z, notchCenters, RTopOuter, H, notchOpts);
+    };
+    const innerRadiusFn = (z, theta) => {
+      const base = RInnerFloorTop + (RTopInner - RInnerFloorTop) * ((z - floorT) / (H - floorT));
+      return base + geo.notchOffsetAt(theta, z, notchCenters, RTopOuter, H, notchOpts);
+    };
+
+    const outerGrid = geo.wallGrid(outerRadiusFn, sharedZs, n, slotOpenColumnsAt);
+    const innerGrid = geo.wallGrid(innerRadiusFn, sharedZs, n, slotOpenColumnsAt);
+    pieces.push(...geo.wallGridFaces(outerGrid, true));
+    pieces.push(...geo.wallGridFaces(innerGrid, false));
+    // Seals every genuine hole loop (air slots) found inside this grid —
+    // the grid's own top/bottom rim boundaries are excluded automatically
+    // (see excludeEdgeRings in geo.findGridHoleLoops) since those are
+    // capped separately below, not holes.
+    pieces.push(...geo.stitchWallGridHoles(outerGrid, innerGrid));
+
+    // Outer wall below floorT (floor skin, unaffected by notch/slots —
+    // both are validated in calculator.js to stay above this z) as a
+    // plain, un-notched taper, joined seamlessly to the grid above since
+    // both use the identical base-taper formula at z=floorT.
+    const radiusAtFloorT = RBottomOuter + (RTopOuter - RBottomOuter) * (floorT / H);
+    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
+    const ringFloorTOuter = geo.ring3(radiusAtFloorT, floorT, n);
+    pieces.push(...geo.quadStrip(ringBottomOuter, ringFloorTOuter, true));
+
+    ringTopOuter = outerGrid.rings[outerGrid.rings.length - 1];
+    ringBottomInner = innerGrid.rings[0];
+    ringTopInner = innerGrid.rings[innerGrid.rings.length - 1];
+
+    // Top rim cap — built from the actual (possibly notched) top rings so
+    // it shares vertices with the walls exactly, with no seam.
+    pieces.push(...geo.annulusCapFromRings(ringTopOuter, ringTopInner, true));
+  } else {
+    // 1) Outer wall, full height (continuous taper, covers floor skin + cavity wall)
+    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
+    ringTopOuter = geo.ring3(RTopOuter, H, n);
+    pieces.push(...geo.quadStrip(ringBottomOuter, ringTopOuter, true));
+
+    // 2) Inner wall, floorT..H
+    ringBottomInner = geo.ring3(RInnerFloorTop, floorT, n);
+    ringTopInner = geo.ring3(RTopInner, H, n);
+    pieces.push(...geo.quadStrip(ringBottomInner, ringTopInner, false));
+
+    // 3) Top rim cap
+    pieces.push(...geo.annulusCap(RTopOuter, RTopInner, H, n, true));
+  }
+
+  // 4) Drainage holes
+  const nHoles = spec.drainHoleCount;
+  const holeCenters = [];
+  let holeR = spec.drainHoleDiam / 2.0;
+  if (nHoles > 0) {
+    const boltR = spec.drainHoleBoltCircleDiam / 2.0;
+    for (let i = 0; i < nHoles; i++) {
+      const a = (2 * Math.PI * i) / nHoles;
+      holeCenters.push([boltR * Math.cos(a), boltR * Math.sin(a)]);
+    }
+  }
+
+  // 5) Bottom cap
+  if (nHoles > 0) {
+    pieces.push(...geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false));
+  } else {
+    pieces.push(...geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false));
+  }
+
+  // 6) Floor-top cap
+  if (nHoles > 0) {
+    pieces.push(...geo.discWithHoles3D(RInnerFloorTop, holeCenters, holeR, floorT, n, nHole, true));
+  } else {
+    pieces.push(...geo.flatDiscFan(RInnerFloorTop, floorT, n, 0, 0, true));
+  }
+
+  // 7) Hole tunnel walls
+  if (nHoles > 0) {
+    pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
+  }
+
+  // No feet: the pot sits flat on its own floor (z=0) for reliable
+  // first-layer adhesion.
+
+  return pieces; // array of [p0,p1,p2] triangles
+}
+
+// Flat Float32Array of vertex positions (3 verts * 3 comps per triangle),
+// suitable for a non-indexed THREE.BufferGeometry.
+export function trianglesToFloat32(triangles) {
+  const arr = new Float32Array(triangles.length * 9);
+  let o = 0;
+  for (const [p0, p1, p2] of triangles) {
+    arr[o++] = p0[0]; arr[o++] = p0[1]; arr[o++] = p0[2];
+    arr[o++] = p1[0]; arr[o++] = p1[1]; arr[o++] = p1[2];
+    arr[o++] = p2[0]; arr[o++] = p2[1]; arr[o++] = p2[2];
+  }
+  return arr;
+}
