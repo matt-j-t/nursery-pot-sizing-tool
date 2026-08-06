@@ -20,6 +20,11 @@
 
 * { box-sizing: border-box; }
 
+/* Author rules like `.mode-panel.field-stack { display: flex }` would
+   otherwise beat the UA stylesheet's `[hidden] { display: none }` and leave
+   toggled-off panels visibly rendered — force it explicitly. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--page-bg);
