@@ -3,6 +3,7 @@ import { buildPotMesh } from "./potBuilder.js";
 import { writeBinarySTL, readSTL, meshStats } from "./stlIO.js";
 import { analyzeDecorativePot, formatAnalysisReport } from "./stlDerive.js";
 import { PotViewer } from "./viewer.js";
+import { renderDiagram } from "./diagram.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,7 +21,6 @@ const els = {
   heightClearance: $("heightClearance"),
   holes: $("holes"), holeDiam: $("holeDiam"),
   nSeg: $("nSeg"),
-  liftNotchCount: $("liftNotchCount"),
   airSlotsEnabled: $("airSlotsEnabled"),
   generateBtn: $("generateBtn"),
   resultsSection: $("resultsSection"),
@@ -33,6 +33,11 @@ const els = {
   qrCanvas: $("qrCanvas"),
   downloadStlBtn: $("downloadStlBtn"),
   copyLinkBtn: $("copyLinkBtn"),
+  diagramSvgWrap: $("diagramSvgWrap"),
+  resultChip: $("resultChip"),
+  resultChipText: $("resultChipText"),
+  chipStlLink: $("chipStlLink"),
+  inputSection: document.querySelector("main"),
 };
 
 const viewer = new PotViewer(els.viewer3d);
@@ -60,8 +65,17 @@ function setMode(mode) {
   els.directPanel.hidden = isContainer;
 }
 
-els.modeContainer.addEventListener("change", () => setMode("container"));
-els.modeDirect.addEventListener("change", () => setMode("direct"));
+els.modeContainer.addEventListener("change", () => { setMode("container"); scheduleDiagramUpdate(); updateGenerateEnabled(); });
+els.modeDirect.addEventListener("change", () => { setMode("direct"); scheduleDiagramUpdate(); updateGenerateEnabled(); });
+
+function getLiftNotchCount() {
+  const checked = document.querySelector('input[name="liftNotchCount"]:checked');
+  return checked ? Math.round(parseFloat(checked.value)) : 0;
+}
+function setLiftNotchCount(value) {
+  const radio = document.querySelector(`input[name="liftNotchCount"][value="${value}"]`);
+  if (radio) radio.checked = true;
+}
 
 function readAdvanced() {
   return {
@@ -73,7 +87,7 @@ function readAdvanced() {
     drainHoleCount: Math.round(num(els.holes, calc.DEFAULTS.drainHoleCount)),
     drainHoleDiam: num(els.holeDiam, calc.DEFAULTS.drainHoleDiam),
     nSeg: Math.round(num(els.nSeg, calc.DEFAULTS.nSeg)),
-    liftNotchCount: Math.round(num(els.liftNotchCount, calc.DEFAULTS.liftNotchCount)),
+    liftNotchCount: getLiftNotchCount(),
     airSlotsEnabled: els.airSlotsEnabled.checked,
   };
 }
@@ -115,10 +129,79 @@ async function handleStlFile(file) {
     }
     msg += "\n\nFields below are editable — adjust if these look off.";
     els.stlStatus.textContent = msg;
+    scheduleDiagramUpdate();
+    updateGenerateEnabled();
   } catch (err) {
     els.stlStatus.textContent = `Couldn't read that STL: ${err.message}`;
   }
 }
+
+// ---------------------------------------------------------------------
+// Live diagram + generate-button validity
+// ---------------------------------------------------------------------
+
+function tryResolveSpec() {
+  const mode = getMode();
+  const advanced = readAdvanced();
+  try {
+    if (mode === "container") {
+      const ctd = num(els.ctd, NaN), cbd = num(els.cbd, NaN), cdep = num(els.cdep, NaN);
+      if (![ctd, cbd, cdep].every(Number.isFinite)) return null;
+      return calc.sizeFromContainerInner({
+        containerTopInnerDiam: ctd,
+        containerBottomInnerDiam: cbd,
+        containerInnerDepth: cdep,
+        ...advanced,
+      });
+    }
+    const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
+    if (![ttd, th].every(Number.isFinite)) return null;
+    return calc.sizeFromContainerSimple({ containerTopInnerDiam: ttd, containerInnerDepth: th, ...advanced });
+  } catch (err) {
+    return null;
+  }
+}
+
+function updateDiagram() {
+  const mode = getMode();
+  let outer;
+  if (mode === "container") {
+    const ctd = num(els.ctd, NaN), cbd = num(els.cbd, NaN), cdep = num(els.cdep, NaN);
+    outer = { topDiam: ctd, bottomDiam: Number.isFinite(cbd) ? cbd : null, depth: cdep };
+  } else {
+    const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
+    outer = { topDiam: ttd, bottomDiam: null, depth: th };
+  }
+
+  const spec = tryResolveSpec();
+  const inner = spec ? { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height } : null;
+
+  renderDiagram(els.diagramSvgWrap, {
+    outer,
+    inner,
+    holeCount: spec ? spec.drainHoleCount : 0,
+    showBottomRuler: mode === "container",
+  });
+}
+
+let diagramTimer = null;
+function scheduleDiagramUpdate() {
+  clearTimeout(diagramTimer);
+  diagramTimer = setTimeout(updateDiagram, 200);
+}
+
+function updateGenerateEnabled() {
+  els.generateBtn.disabled = tryResolveSpec() === null;
+}
+
+els.inputSection.addEventListener("input", () => {
+  scheduleDiagramUpdate();
+  updateGenerateEnabled();
+});
+els.inputSection.addEventListener("change", () => {
+  scheduleDiagramUpdate();
+  updateGenerateEnabled();
+});
 
 // ---------------------------------------------------------------------
 // Generate
@@ -126,6 +209,7 @@ async function handleStlFile(file) {
 
 els.generateBtn.addEventListener("click", () => generate(true));
 els.downloadStlBtn.addEventListener("click", downloadStl);
+els.chipStlLink.addEventListener("click", downloadStl);
 els.copyLinkBtn.addEventListener("click", copyLink);
 
 async function generate(updateUrl) {
@@ -186,6 +270,20 @@ async function generate(updateUrl) {
   lastStlBlob = new Blob([stlBuf], { type: "model/stl" });
 
   els.resultsSection.hidden = false;
+
+  els.resultChip.hidden = false;
+  els.resultChipText.textContent =
+    `Liner: Ø${spec.outerTopDiam.toFixed(0)} top · Ø${spec.outerBottomDiam.toFixed(0)} bottom · ${spec.height.toFixed(0)}mm`;
+
+  renderDiagram(els.diagramSvgWrap, {
+    outer:
+      mode === "container"
+        ? { topDiam: num(els.ctd, NaN), bottomDiam: num(els.cbd, NaN), depth: num(els.cdep, NaN) }
+        : { topDiam: num(els.ttd, NaN), bottomDiam: null, depth: num(els.th, NaN) },
+    inner: { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height },
+    holeCount: spec.drainHoleCount,
+    showBottomRuler: mode === "container",
+  });
 
   // AR exports (GLB + USDZ) — don't block the visible report/preview on these
   setupAR(triangles).catch((err) => console.warn("AR export failed:", err));
@@ -302,11 +400,16 @@ function applyStateFromURL() {
   if (p.has("holes")) els.holes.value = p.get("holes");
   if (p.has("holeD")) els.holeDiam.value = p.get("holeD");
   if (p.has("seg")) els.nSeg.value = p.get("seg");
-  if (p.has("notch")) els.liftNotchCount.value = p.get("notch");
+  if (p.has("notch")) setLiftNotchCount(p.get("notch"));
   if (p.has("slots")) els.airSlotsEnabled.checked = p.get("slots") === "1";
   return true;
 }
 
+updateDiagram();
+updateGenerateEnabled();
+
 if (applyStateFromURL()) {
+  updateDiagram();
+  updateGenerateEnabled();
   generate(false).then(renderShareTarget);
 }
