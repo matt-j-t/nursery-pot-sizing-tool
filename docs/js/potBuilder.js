@@ -1,6 +1,11 @@
 // Assembles the full nursery-pot triangle list from a calculator spec.
 // Direct port of pot_builder.py.
 import * as geo from "./geometry.js";
+// mjt logo emboss — pure data + a pure point-in-polygon test, both usable
+// as supplied (unlike the other features-wip references, which needed
+// their math ported into this file's own architecture). Imported directly
+// from features-wip rather than duplicated into docs/js/.
+import { pointInLogo } from "../features-wip/logo-emboss.mjs";
 
 export function buildPotMesh(spec) {
   const n = spec.nSeg;
@@ -82,7 +87,8 @@ export function buildPotMesh(spec) {
   const grooveOpts = {
     gapMM: spec.grooveGapMM,
     rampMM: spec.grooveRampMM,
-    halfWidthAngle: spec.grooveHalfWidthMM / spec.hubRadiusMM,
+    flatHalfAngle: spec.grooveFlatHalfAngleRad,
+    transitionAngle: spec.grooveTransitionAngleRad,
   };
   const grooveZAt = (r, theta) => geo.grooveOffsetAt(r, theta, spec.grooveCenters, spec.hubRadiusMM, grooveOpts);
   const warpRingZ = (ring) =>
@@ -229,11 +235,78 @@ export function buildPotMesh(spec) {
     // excluded automatically, same as the wall's slot stitching above).
     pieces.push(...geo.stitchWallGridHoles(outerFloorGrid, innerFloorGrid));
 
-    // Hub fans — the single legitimate fan point in this construction
-    // (see pot-floor.mjs comment): bottom flush with the bed, top flush
-    // with the floor's soil-facing surface.
+    // Hub underside — unaffected by the logo emboss below (that's an
+    // interior/soil-facing detail only); stays the single legitimate flat
+    // fan (see pot-floor.mjs comment) flush with the bed.
     pieces.push(...geo.flatDiscFan(hubR, 0.0, n, 0, 0, false));
-    pieces.push(...geo.flatDiscFan(hubR, floorT, n, 0, 0, true));
+
+    // Hub top (soil-facing) — carries the small mjt logo emboss, so unlike
+    // the underside it can't be a plain fan: a fan has no interior
+    // vertices between its single center point and the outer ring, so
+    // there'd be nothing for a compact interior bump to sit on (the exact
+    // ear-clipping problem the grooved floor itself was rewritten to
+    // avoid — see the comment above geo.radialGrid). Give it a real
+    // radial grid instead, flat at floorT everywhere except where
+    // pointInLogo() says a point falls inside the logo, where it's raised
+    // by LOGO_EMBOSS_HEIGHT_MM.
+    //
+    // The logo is NOT safely clear of the hub center — checked directly
+    // against the polygon data: pointInLogo(0,0) is true, and the nearest
+    // logo boundary crossing to the origin is ~0.01mm away, so a plain
+    // flat "true fan" at any radius that matters would clip part of a
+    // letter stroke. The true center point still has to be a fan (there's
+    // no way to avoid one legitimate fan point at r=0 — see pot-floor.mjs
+    // comment), but it evaluates hubTopZ at the center too instead of
+    // assuming it's flat, down to a fan radius small enough (0.1mm, under
+    // the 0.4mm nozzle's resolution either way) that any imprecision
+    // right at the very center is unprintable regardless.
+    const LOGO_WIDTH_MM = 12.0;
+    const LOGO_HEIGHT_MM = LOGO_WIDTH_MM * 0.42; // matches logo-emboss.mjs's own aspect assumption
+    const LOGO_EMBOSS_HEIGHT_MM = 0.5;
+    const LOGO_HUB_FAN_R_MM = 0.1;
+    const logoHalfW = LOGO_WIDTH_MM / 2, logoHalfH = LOGO_HEIGHT_MM / 2;
+
+    function hubTopZ(r, theta) {
+      const x = r * Math.cos(theta), y = r * Math.sin(theta);
+      // Cheap bounding-box gate before the (still cheap, but not free)
+      // point-in-polygon test — most of the hub disc is nowhere near the
+      // logo's 12mm x 5mm footprint.
+      if (Math.abs(x) <= logoHalfW && Math.abs(y) <= logoHalfH && pointInLogo(x / 1000, y / 1000)) {
+        return floorT + LOGO_EMBOSS_HEIGHT_MM;
+      }
+      return floorT;
+    }
+
+    function logoAwareCenterFan(radius, nCols, zFn) {
+      const ring = [];
+      for (let k = 0; k < nCols; k++) {
+        const theta = (2 * Math.PI * k) / nCols;
+        ring.push([radius * Math.cos(theta), radius * Math.sin(theta), zFn(radius, theta)]);
+      }
+      const center = [0, 0, zFn(0, 0)];
+      const tris = [];
+      for (let k = 0; k < nCols; k++) {
+        const j = (k + 1) % nCols;
+        tris.push([center, ring[k], ring[j]]); // matches flatDiscFan's facingUp=true winding
+      }
+      return tris;
+    }
+
+    if (LOGO_HUB_FAN_R_MM < hubR) {
+      const nHubRings = 48; // fine enough that the logo's ~12mm footprint gets real resolution, not just a couple of rings
+      const hubRLevels = Array.from(
+        { length: nHubRings },
+        (_, i) => LOGO_HUB_FAN_R_MM + (hubR - LOGO_HUB_FAN_R_MM) * (i / (nHubRings - 1))
+      );
+      const hubTopGrid = geo.radialGrid(hubTopZ, hubRLevels, n);
+      pieces.push(...geo.wallGridFaces(hubTopGrid, true));
+      pieces.push(...logoAwareCenterFan(LOGO_HUB_FAN_R_MM, n, hubTopZ));
+    } else {
+      // Degenerate (only possible with an unusually tiny hub radius) —
+      // fall back to a single logo-aware fan rather than build a grid
+      // with no rings in it.
+      pieces.push(...logoAwareCenterFan(hubR, n, hubTopZ));
+    }
   } else {
     // 5) Bottom cap
     if (nHoles > 0) {
