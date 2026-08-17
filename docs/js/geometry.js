@@ -569,10 +569,10 @@ export function manifoldCheck(triangles, eps = 1e-6) {
 
 // ---------------------------------------------------------------------
 // Base grooves — radial drainage/venting channels recessed into the
-// underside of the floor. Math ported verbatim from the tested reference
-// docs/features-wip/pot-floor.mjs (mm-converted; the reference uses
-// meters) — do not re-derive this: a first attempt warped a flat
-// ear-clip-triangulated cap's z by an (r,theta) height field, but
+// underside of the floor. Radial (r) shape ported verbatim from the
+// tested reference docs/features-wip/pot-floor.mjs (mm-converted; the
+// reference uses meters) — do not re-derive this: a first attempt warped
+// a flat ear-clip-triangulated cap's z by an (r,theta) height field, but
 // ear-clipping only places vertices on the outer boundary and hole loops,
 // nothing in the interior, so there was no real grid for the ramp to sit
 // on — the interior got filled by arbitrary long fan triangles, which is
@@ -582,35 +582,57 @@ export function manifoldCheck(triangles, eps = 1e-6) {
 // see radialGrid() below, which reuses that exact same grid shape so it
 // can plug into the already-proven wallGridFaces/findGridHoleLoops/
 // stitchWallGridHoles hole-cutting pipeline for the drain holes.
+//
+// Tangential (theta) shape ported verbatim from docs/features-wip/
+// pot-floor-angular.mjs — a physical print of the original smooth cosine
+// taper came out paper-thin and failed right around the drain holes,
+// where the curve was steepest: offsetting a surface along its normal to
+// hold wall thickness constant is only exact on FLAT facets, so on a
+// smooth curve the true printed thickness drifts from the intended
+// value. pot-floor-angular.mjs fixes this by making the tangential
+// profile FACETED (a flat groove floor + a short linear transition + a
+// flat ridge), never a curve — see grooveAngularProfile() below, do not
+// re-derive this back into a cosine.
 // ---------------------------------------------------------------------
 
 // 0 at r <= hubRadius (flush with the hub/bed), a LINEAR ramp to 1 over
 // the next `rampMM` of radius (rise==run over rampMM, exactly 45 degrees
-// by construction — matches pot-floor.mjs's radialTaper() exactly, not a
-// cosine ease like the lift notch uses), then 1.0 the rest of the way to
-// the pot's edge.
+// by construction — matches pot-floor.mjs's/pot-floor-angular.mjs's
+// radialTaper() exactly), then 1.0 the rest of the way to the pot's edge.
 export function grooveRadialTaper(r, hubRadius, rampMM = 1.2) {
   if (r <= hubRadius) return 0.0;
   if (r >= hubRadius + rampMM) return 1.0;
   return (r - hubRadius) / rampMM;
 }
 
+// 1.0 within +/-flatHalfAngle of a groove center (flat channel floor),
+// linearly down to 0.0 over the next `transitionAngle` (the only place
+// the surface isn't flat — a short straight ramp, not a curve), 0.0
+// beyond that (flat ridge). Matches pot-floor-angular.mjs's
+// angularProfile() exactly.
+export function grooveAngularProfile(d, flatHalfAngle, transitionAngle) {
+  const ad = Math.abs(d);
+  if (ad <= flatHalfAngle) return 1.0;
+  const fullHalfAngle = flatHalfAngle + transitionAngle;
+  if (ad >= fullHalfAngle) return 0.0;
+  return 1.0 - (ad - flatHalfAngle) / transitionAngle;
+}
+
 // Combined channel height (mm, positive = lifted off the bed) at (r,
 // theta) from every groove in `grooveCenters` (array of theta values in
-// radians, one per drain hole). Matches pot-floor.mjs's grooveBottomZ()
-// exactly: angular half-width is a fixed angle (not re-derived per
-// radius) and multiple grooves combine via MAX (not sum), so overlapping
-// tapers can never double up past the intended depth.
+// radians, one per drain hole). Matches pot-floor-angular.mjs's
+// grooveBottomZ() exactly: multiple grooves combine via MAX (not sum),
+// so overlapping tapers can never double up past the intended depth.
 export function grooveOffsetAt(r, theta, grooveCenters, hubRadius, opts = {}) {
   if (!grooveCenters || grooveCenters.length === 0) return 0;
-  const { gapMM = 1.2, rampMM = 1.2, halfWidthAngle = 0.27 } = opts;
+  const { gapMM = 1.2, rampMM = 1.2, flatHalfAngle = 0.2, transitionAngle = 0.05 } = opts;
   const radial = grooveRadialTaper(r, hubRadius, rampMM);
   if (radial <= 0) return 0;
   let best = 0;
   for (const c of grooveCenters) {
     let d = theta - c;
     d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to [-pi, pi]
-    const t = cosTaper(d, halfWidthAngle);
+    const t = grooveAngularProfile(d, flatHalfAngle, transitionAngle);
     if (t > best) best = t;
   }
   return gapMM * radial * best;
