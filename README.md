@@ -84,24 +84,58 @@ reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
   vertex) rather than silently producing broken geometry.
 - **Base grooves** — automatic whenever there are drain holes: one radial channel per drain
   hole, recessed into the floor's underside and running from a 15mm hub out to the pot's outer
-  edge, so water reaches the drain holes and the pot doesn't seal flat against a surface. Like
-  the lift notch, this is baked directly into the bottom surface's height as a function of
-  (radius, angle) — a cosine ramp from flush-with-the-hub up to a 1.2mm-raised plateau over the
-  first 1.2mm of radius, then flat out to the edge — so it needs no hole-stitching for the
-  channel shape itself; only the drain hole through each channel is a genuine through-hole,
-  using the existing hole mechanism with its bottom ring warped to match.
+  edge, so water reaches the drain holes and the pot doesn't seal flat against a surface. A
+  radial (r, theta) height field — flush at the hub, a linear 45°-safe ramp up to a 1.2mm-raised
+  plateau over the first 1.2mm of radius, then flat out to the edge — ported from the tested
+  `docs/features-wip/pot-floor.mjs`. The floor is built as its own proper radial x angular grid
+  (`geo.radialGrid`, structurally the same idea as the wall's ring loft), not a warped flat cap:
+  an early version warped a flat ear-clip-triangulated disc's height, but ear-clipping only
+  places vertices on the outer boundary and hole loops — nothing in the interior — so there was
+  no real grid for the ramp to sit on, and the interior got filled with arbitrary long fan
+  triangles instead of the intended channel shape. The radial grid has exactly one legitimate
+  fan point (the hub center); everything else is proper quads between radial rings, and drain
+  holes are cut out of it the same way air slots are cut out of the wall grid (open grid cells
+  sealed by the generic boundary-loop stitcher).
 
-Both the lift notch and the base groove correct for a real bug found during development: an
-internal grid-building function (`wallGrid`) was calling its radius callback with the wrong
-argument order, so the notch's angle parameter silently received an integer column index instead
-of a real angle — producing a repeating zigzag of small triangular dips around the entire rim
-instead of one smooth, localized arc. Fixed by matching the call convention already used
-elsewhere (`ringStack`).
+  The groove's TANGENTIAL shape (its cross-section swept around each channel's center angle) is
+  FACETED — a flat channel floor, a short linear transition, then a flat ridge — not a cosine
+  curve, ported from `docs/features-wip/pot-floor-angular.mjs`. A physical print of an earlier
+  cosine version came out paper-thin and failed right around the drain holes: holding wall
+  thickness constant by offsetting a surface a fixed vertical amount only stays accurate where
+  the surface is flat, and the true (perpendicular) thickness drifted thinnest exactly where the
+  cosine curve was steepest. Two validity checks in `calculator.js`'s `resolvePot` now catch this
+  class of problem before it can reach the mesh: a ridge-to-ridge width check (adjacent grooves
+  can't crowd the solid ridge between them down to nothing) and a hole-to-transition-zone
+  clearance check (a drain hole can't reach into a groove's transition zone with less than a wall
+  thickness of margin — specifically where the physical print failed) — both throw with the
+  actual measured clearance in mm rather than silently generating unsafe geometry.
+
+- **mjt logo emboss** — a small raised `mjt.` mark on the interior (soil-facing) hub, whenever
+  base grooves are active (the hub is a construct of that floor path only). Polygon data and a
+  point-in-polygon test ported from `docs/features-wip/logo-data.mjs` /
+  `docs/features-wip/logo-emboss.mjs`. Since the interior floor surface is a height field (not an
+  independent mesh unioned onto the exterior), the emboss is wired in by raising that height
+  field's z by a small fixed amount wherever `pointInLogo()` is true, instead of the normal flush
+  offset — everywhere else, and the entire exterior surface, is untouched. Like the grooved
+  floor, the hub's interior cap can't be a plain triangle fan once it needs to carry a compact
+  interior bump (a fan has no vertices between the center point and its outer ring for a bump to
+  sit on) — it's built as its own small radial grid instead, with only the true center point
+  still a fan (the logo passes extremely close to — even through — the hub's exact center, so
+  that fan evaluates the logo test at its own vertices too rather than assuming it's clear).
+
+Both the lift notch and the base groove's radial ramp correct for a real bug found during
+development: an internal grid-building function (`wallGrid`) was calling its radius callback with
+the wrong argument order, so the notch's angle parameter silently received an integer column
+index instead of a real angle — producing a repeating zigzag of small triangular dips around the
+entire rim instead of one smooth, localized arc. Fixed by matching the call convention already
+used elsewhere (`ringStack`).
 
 Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (features on and
 off in combination, various sizes/resolutions) are watertight — every edge shared by exactly two
-faces, no open or non-manifold edges. This is the regression test for the multi-hole topology
-class of bug described in the spec above.
+faces, no open or non-manifold edges — and that the groove ridge-width/hole-clearance checks
+above correctly accept safe configurations and reject unsafe ones. This is the regression test
+for both the multi-hole topology class of bug described in the spec above and the print-safety
+checks described here.
 
 ## Notes on the STL-upload cavity detection
 
