@@ -54,14 +54,21 @@ const AIR_SLOT_MIN_BAND_MM = 10.0;
 // underside of the floor, one per drain hole, running from a central hub
 // out to the pot's outer edge (open there, so the channel stays exposed
 // to air even when the pot sits flush on a surface). Baked directly into
-// the bottom surface's height as a function of (r, theta) — same
-// cosine-taper technique as the lift notch, just swept over radius
-// instead of wall height. See geo.grooveOffsetAt.
+// the bottom surface's height as a function of (r, theta) — a linear
+// radial ramp swept over radius, and a FACETED (flat + linear transition,
+// not a cosine curve) angular profile — see geo.grooveOffsetAt. The
+// angular profile was switched from a cosine curve to this faceted one
+// specifically because the wall-thickness-by-normal-offset technique only
+// holds exactly on flat facets; a physical print of the cosine version
+// came out paper-thin and failed right around the drain holes, where the
+// curve was steepest. See docs/features-wip/pot-floor-angular.mjs.
 const GROOVE_HUB_RADIUS_MM = 15.0;
 const GROOVE_GAP_MM = 1.2; // how far the channel floor lifts off the bed at its raised plateau
 const GROOVE_RAMP_MM = 1.2; // radial run of the ramp up from the hub (rise==run, 45-deg safe)
-const GROOVE_HALF_WIDTH_MM = 4.0; // angular half-width, measured at the hub
+const GROOVE_FLAT_HALF_ANGLE_RAD = 0.2; // angular half-width of the groove's flat channel floor
+const GROOVE_TRANSITION_ANGLE_RAD = 0.05; // angular width of the ramp from flat channel floor up to flat ridge
 const GROOVE_MIN_ANNULUS_MM = 8.0; // minimum hubRadius..RBottomOuter span needed to bother
+const GROOVE_MIN_RIDGE_WIDTH_MM = 4.0; // minimum solid ridge width left between adjacent grooves at the hub
 
 const deg2rad = (d) => (d * Math.PI) / 180.0;
 
@@ -290,6 +297,50 @@ export function resolvePot({
     );
     groovesOn = false;
   }
+  if (groovesOn) {
+    // Ridge-to-ridge width check — ported verbatim from
+    // docs/features-wip/pot-floor-angular.mjs's buildFloorAngular(). The
+    // angular groove profile is faceted (flat channel floor + linear
+    // transition + flat ridge) specifically so wall-thickness-by-normal-
+    // offset holds exactly, but that only works if a real flat ridge is
+    // actually left standing between adjacent grooves at every radius —
+    // with enough grooves crowded into a full turn, the transitions from
+    // neighboring grooves can eat the ridge down to nothing (or negative,
+    // i.e. overlapping). Hard-fail rather than silently generate an
+    // impossible or knife-edge-thin ridge.
+    const anglePerGroove = (2 * Math.PI) / nHoles;
+    const grooveFullHalfAngle = GROOVE_FLAT_HALF_ANGLE_RAD + GROOVE_TRANSITION_ANGLE_RAD;
+    const ridgeAngle = anglePerGroove - 2 * grooveFullHalfAngle;
+    const ridgeWidthAtHub = ridgeAngle * (GROOVE_HUB_RADIUS_MM + GROOVE_RAMP_MM);
+    if (ridgeAngle <= 0 || ridgeWidthAtHub < GROOVE_MIN_RIDGE_WIDTH_MM) {
+      throw new Error(
+        `Base grooves: the ridge between adjacent channels is only ${Math.max(ridgeWidthAtHub, 0).toFixed(2)}mm ` +
+          `wide at the hub (needs at least ${GROOVE_MIN_RIDGE_WIDTH_MM.toFixed(1)}mm) — reduce drain hole count ` +
+          `or increase hub radius.`
+      );
+    }
+
+    // Hole-to-transition-zone clearance check — NOT covered by the ridge
+    // check above, and specifically where the physical print failed: each
+    // drain hole is centered on its groove's flat channel floor, but if
+    // the hole's own edge reaches into the transition zone (where the
+    // exterior surface is ramping up toward the ridge), the solid
+    // material around the hole there is thinner than intended, the same
+    // way it was on the old cosine curve. Measure the actual clearance
+    // (arc length, in mm, from the hole's edge to where the transition
+    // zone starts) and require it to be at least wallT.
+    if (boltRHoles > 0) {
+      const holeHalfAngle = Math.asin(Math.min(1, holeR / boltRHoles));
+      const clearanceMM = (GROOVE_FLAT_HALF_ANGLE_RAD - holeHalfAngle) * boltRHoles;
+      if (clearanceMM < wallT) {
+        throw new Error(
+          `Base grooves: a drain hole is only ${clearanceMM.toFixed(2)}mm from its groove's transition zone ` +
+            `(needs at least the wall thickness, ${wallT.toFixed(2)}mm) — this is where the print failed before. ` +
+            `Reduce drain hole diameter or count, or adjust the bolt circle.`
+        );
+      }
+    }
+  }
   if (groovesOn && floorT - GROOVE_GAP_MM < MIN_PRINTABLE_FLOOR) {
     notes.push(
       `Base grooves thin the floor locally to ${(floorT - GROOVE_GAP_MM).toFixed(2)}mm at each channel ` +
@@ -333,7 +384,8 @@ export function resolvePot({
     hubRadiusMM: GROOVE_HUB_RADIUS_MM,
     grooveGapMM: GROOVE_GAP_MM,
     grooveRampMM: GROOVE_RAMP_MM,
-    grooveHalfWidthMM: GROOVE_HALF_WIDTH_MM,
+    grooveFlatHalfAngleRad: GROOVE_FLAT_HALF_ANGLE_RAD,
+    grooveTransitionAngleRad: GROOVE_TRANSITION_ANGLE_RAD,
     warnings,
     notes,
   };
