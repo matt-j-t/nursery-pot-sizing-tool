@@ -25,18 +25,19 @@ python3 -m http.server 8000
 Settings → Pages, set the source to the `main` branch, `/docs` folder. GitHub will publish it
 at `https://<username>.github.io/<repo>/`.
 
-Flow: every mode takes measurements of your DECORATIVE pot's inside — you never enter the
-nursery pot's own final size directly. Pick "Simple" (just the inner top diameter and depth —
-good enough when the pot doesn't taper much) or "Full" (inner top diameter, bottom diameter,
-and depth — type them in, or drop in an STL to auto-fill those fields). Advanced options (draft
-angle, wall/floor thickness, diametric clearance, height clearance, drain holes) are collapsed
-by default with sensible design-rule defaults. Generating a pot shows the computed numbers, any
-printability warnings, a live 3D preview, and a download-STL button. On a phone, a "View in AR"
-button appears; on desktop, a QR code appears that encodes the same pot's parameters in the
-URL, so scanning it opens the identical pot on your phone for AR viewing.
+Flow: measurements are of your DECORATIVE pot's inside — you never enter the nursery pot's own
+final size directly. Enter the inner top diameter and depth (required); inner bottom diameter is
+optional — add it if you know it and the pot tapers noticeably, or skip it and the tool models
+the liner without that taper correction. Lift notches (rim finger grips) and air slots (root
+air-pruning) sit right on the main form. Advanced options (draft angle, wall/floor thickness,
+diametric clearance, height clearance, drain holes) are collapsed by default with sensible
+design-rule defaults. Generating a pot shows the computed numbers, any printability warnings, a
+live 3D preview, and a download-STL button. On a phone, a "View in AR" button appears; on
+desktop, a QR code appears that encodes the same pot's parameters in the URL, so scanning it
+opens the identical pot on your phone for AR viewing.
 
-Everything (geometry construction, STL/GLB/USDZ export, the STL-upload cavity analysis) runs
-client-side — nothing is uploaded anywhere.
+Everything (geometry construction, STL/GLB/USDZ export) runs client-side — nothing is uploaded
+anywhere.
 
 ## Command-line tool
 
@@ -136,9 +137,10 @@ dome's plateau/slope size is a fixed absolute value, not yet scaled to pot size,
 fits inside a very small floor. Tracked as follow-up work; the reference pot size and all other
 configs pass.
 
-## Notes on the STL-upload cavity detection
+## Notes on the STL-upload cavity detection (command-line tool only)
 
-The "derive from STL" path slices the uploaded mesh with horizontal planes and reads where the
-inner cavity wall sits at each height — a heuristic, not a full CAD analysis. It works well on
-typical single-body round/tapered planters. Detected numbers are shown as editable fields so
-you can sanity-check and correct them before generating.
+The website no longer has an STL-upload option — enter dimensions directly instead. The
+command-line tool's `--from-stl` path still slices the uploaded mesh with horizontal planes and
+reads where the inner cavity wall sits at each height — a heuristic, not a full CAD analysis. It
+works well on typical single-body round/tapered planters. Detected numbers are printed so you
+can sanity-check them before generating.
