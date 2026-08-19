@@ -52,23 +52,27 @@ Python 3 + numpy.
 
 ## Design rules baked in
 
-- 1.6mm walls (4 perimeters @ 0.4mm nozzle), 1.6mm minimum floor
+- 1.6mm walls (4 perimeters @ 0.4mm nozzle). Floor thickness now always follows wall thickness
+  (see the dome floor below) — the separate floor-thickness field is still accepted for
+  backward compatibility but no longer affects the generated geometry
 - 5° default wall draft, auto-steepened if needed to clear a narrower container bottom, but
   hard-capped at 45° from vertical so walls always print without supports
 - ~3mm total diametric clearance between nursery pot and container
 - ~5mm height clearance — the nursery pot sits this much shorter than the container's inner
   depth so it doesn't jam at the bottom and is easy to lift back out
-- 6–8 × 6mm drainage holes; adjacent holes are auto-spaced/shrunk to avoid overlapping on a
-  small floor
+- 8 × 5mm round drainage holes on a flat ring near the floor's outer edge; auto-shrunk (and, on
+  a very small floor, count-reduced) to keep clearance from both the dome's slope and the inner
+  wall
 - No feet — the pot sits flat on its own floor for reliable first-layer adhesion
 - Warns on anything under-strength or unprintable (thin walls/floor, cramped drain holes, or a
   draft angle so capped that the pot won't reach the container's floor) before generating
   geometry
 
-## Lift notches, air slots, and base grooves (website only)
+## Lift notches, air slots, and the dome floor (website only)
 
-Three optional features in the website's advanced options, all ported from a Blender-validated
-reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
+Lift notches and air slots are optional features in the website's advanced options, ported from
+a Blender-validated reference design (see `docs/features-wip/nursery-pot-features-spec.md`). The
+dome floor (below) is not optional — it's the pot's base on every generated pot.
 
 - **Lift notches** (0/1/2, 180° apart if 2) — a fixed 20mm-wide, 6mm-deep finger recess baked
   into the rim, fading out over the top 18mm of wall. Fixed size regardless of pot size (sized
@@ -82,60 +86,55 @@ reference design (see `docs/features-wip/nursery-pot-features-spec.md`):
   generic boundary-loop stitcher (`docs/js/geometry.js`: `wallGrid`, `findGridHoleLoops`,
   `stitchWallGridHoles`) that explicitly detects and throws on any "bowtie" (two holes sharing a
   vertex) rather than silently producing broken geometry.
-- **Base grooves** — automatic whenever there are drain holes: one radial channel per drain
-  hole, recessed into the floor's underside and running from a 15mm hub out to the pot's outer
-  edge, so water reaches the drain holes and the pot doesn't seal flat against a surface. A
-  radial (r, theta) height field — flush at the hub, a linear 45°-safe ramp up to a 1.2mm-raised
-  plateau over the first 1.2mm of radius, then flat out to the edge — ported from the tested
-  `docs/features-wip/pot-floor.mjs`. The floor is built as its own proper radial x angular grid
-  (`geo.radialGrid`, structurally the same idea as the wall's ring loft), not a warped flat cap:
-  an early version warped a flat ear-clip-triangulated disc's height, but ear-clipping only
-  places vertices on the outer boundary and hole loops — nothing in the interior — so there was
-  no real grid for the ramp to sit on, and the interior got filled with arbitrary long fan
-  triangles instead of the intended channel shape. The radial grid has exactly one legitimate
-  fan point (the hub center); everything else is proper quads between radial rings, and drain
-  holes are cut out of it the same way air slots are cut out of the wall grid (open grid cells
+- **Dome floor** — the pot's base is a single radially-symmetric dome: a flat plateau at the
+  center, a straight conical slope down to a flat outer ring, then round drain holes near the
+  outer edge. See `docs/nursery-pot-parametric-spec.md` for the full locked-in spec and
+  `docs/features-wip/pot-floor-dome.mjs` for a tested standalone reference implementation
+  (`geo.domeHeight`/`geo.offsetProfileInward`/`geo.ngonCap` in `docs/js/geometry.js` are the
+  wired-in version). This replaced an earlier raised-channel/hub-and-spoke groove design
+  entirely, after a physical print of that design came out paper-thin and failed right around
+  the drain holes: holding wall thickness constant by offsetting the interior surface a fixed
+  vertical amount only stays accurate where the surface is flat, and the true (perpendicular)
+  thickness drifted thinnest exactly where the groove's cross-section was steepest.
+
+  The dome fixes this at the source: the exterior surface is built from `domeHeight(r)` baked
+  directly into a ring loft (concentric rings from the plateau's radius out to the pot's outer
+  radius, innermost ring capped as a flat NGON — ear-clip triangulated across its own boundary,
+  never a single-point fan, even at the center), and the interior surface is a true per-facet
+  normal offset of that profile (`offsetProfileInward` — each straight segment offset along its
+  own 2D normal, then re-mitered at each corner), not a naive vertical shift. That keeps wall
+  thickness genuinely constant through the slope, independent of the dome's rise/run, closing
+  off the exact class of bug that made the earlier design's floor thin out. The slope's angle
+  from horizontal is checked against a hard 45° print-safety cap (reference dimensions land at
+  ≈38.7°) so the dome always prints self-supported — one continuous surface rising smoothly from
+  full bed contact at the outer ring to the plateau, like printing a cone. Drain holes are cut
+  out of the ring loft the same way air slots are cut out of the wall grid (open grid cells
   sealed by the generic boundary-loop stitcher).
 
-  The groove's TANGENTIAL shape (its cross-section swept around each channel's center angle) is
-  FACETED — a flat channel floor, a short linear transition, then a flat ridge — not a cosine
-  curve, ported from `docs/features-wip/pot-floor-angular.mjs`. A physical print of an earlier
-  cosine version came out paper-thin and failed right around the drain holes: holding wall
-  thickness constant by offsetting a surface a fixed vertical amount only stays accurate where
-  the surface is flat, and the true (perpendicular) thickness drifted thinnest exactly where the
-  cosine curve was steepest. Two validity checks in `calculator.js`'s `resolvePot` now catch this
-  class of problem before it can reach the mesh: a ridge-to-ridge width check (adjacent grooves
-  can't crowd the solid ridge between them down to nothing) and a hole-to-transition-zone
-  clearance check (a drain hole can't reach into a groove's transition zone with less than a wall
-  thickness of margin — specifically where the physical print failed) — both throw with the
-  actual measured clearance in mm rather than silently generating unsafe geometry.
+- **mjt logo emboss** — a small raised `mjt.` mark on the interior (soil-facing) plateau, on every
+  pot. Extruded directly from the exact vector polygon data in `docs/features-wip/logo-data.mjs`
+  (parsed once from `docs/mjt-logo.svg`) using the same ear-clip-based prism extrusion the
+  plateau's own flat cap uses (`geo.polygonPrism`) — each of the 5 disjoint letter/dot shapes
+  becomes its own small, independently watertight extruded solid resting on (but not boolean-
+  unioned with) the plateau's cap; two solids sharing a flat contact plane is already a valid,
+  printable construction, so no CSG union is needed. This replaced an earlier heightfield/grid-
+  sampled emboss that produced visibly fuzzy, jagged letter edges at print resolution — extruding
+  the exact polygon boundary instead gives mathematically clean edges regardless of resolution.
 
-- **mjt logo emboss** — a small raised `mjt.` mark on the interior (soil-facing) hub, whenever
-  base grooves are active (the hub is a construct of that floor path only). Polygon data and a
-  point-in-polygon test ported from `docs/features-wip/logo-data.mjs` /
-  `docs/features-wip/logo-emboss.mjs`. Since the interior floor surface is a height field (not an
-  independent mesh unioned onto the exterior), the emboss is wired in by raising that height
-  field's z by a small fixed amount wherever `pointInLogo()` is true, instead of the normal flush
-  offset — everywhere else, and the entire exterior surface, is untouched. Like the grooved
-  floor, the hub's interior cap can't be a plain triangle fan once it needs to carry a compact
-  interior bump (a fan has no vertices between the center point and its outer ring for a bump to
-  sit on) — it's built as its own small radial grid instead, with only the true center point
-  still a fan (the logo passes extremely close to — even through — the hub's exact center, so
-  that fan evaluates the logo test at its own vertices too rather than assuming it's clear).
+The lift notch corrects for a real bug found during development: an internal grid-building
+function (`wallGrid`) was calling its radius callback with the wrong argument order, so the
+notch's angle parameter silently received an integer column index instead of a real angle —
+producing a repeating zigzag of small triangular dips around the entire rim instead of one
+smooth, localized arc. Fixed by matching the call convention already used elsewhere (`ringStack`).
 
-Both the lift notch and the base groove's radial ramp correct for a real bug found during
-development: an internal grid-building function (`wallGrid`) was calling its radius callback with
-the wrong argument order, so the notch's angle parameter silently received an integer column
-index instead of a real angle — producing a repeating zigzag of small triangular dips around the
-entire rim instead of one smooth, localized arc. Fixed by matching the call convention already
-used elsewhere (`ringStack`).
-
-Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (features on and
-off in combination, various sizes/resolutions) are watertight — every edge shared by exactly two
-faces, no open or non-manifold edges — and that the groove ridge-width/hole-clearance checks
-above correctly accept safe configurations and reject unsafe ones. This is the regression test
-for both the multi-hole topology class of bug described in the spec above and the print-safety
-checks described here.
+Run `node docs/js/manifoldTest.mjs` to check a battery of pot configurations (features on and off
+in combination, various sizes/resolutions, plus the exact reference pot size from the dome spec)
+are watertight — every edge shared by exactly two faces, no open or non-manifold edges. This is
+the regression test for the multi-hole topology class of bug described in the spec above. Note:
+two small-pot configs are currently left failing on purpose (commented in the test file) — the
+dome's plateau/slope size is a fixed absolute value, not yet scaled to pot size, so it no longer
+fits inside a very small floor. Tracked as follow-up work; the reference pot size and all other
+configs pass.
 
 ## Notes on the STL-upload cavity detection
 
