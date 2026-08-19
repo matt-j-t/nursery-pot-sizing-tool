@@ -9,13 +9,21 @@
 // caught automatically here, rather than only by visual inspection in the
 // live preview.
 //
-// Some configs are intentionally print-unsafe (crowded grooves, an
-// oversized drain hole) and are expected to be REJECTED by calculator.js's
-// validity checks (ridge-to-ridge width, hole-to-transition-zone
-// clearance — see the "base grooves" section of resolvePot) rather than
-// silently produce a watertight-but-paper-thin mesh. Mark those
-// `expectReject: true`; any config that throws WITHOUT that flag set is a
-// real failure, same as a non-watertight mesh.
+// Some configs are intentionally print-unsafe (e.g. a dome slope over the
+// 45deg print-safety limit) and are expected to be REJECTED by
+// calculator.js's validity checks rather than silently produce a
+// watertight-but-unsafe mesh. Mark those `expectReject: true`; any config
+// that throws WITHOUT that flag set is a real failure, same as a
+// non-watertight mesh.
+//
+// The base is now a dome (flat plateau + conical slope + flat outer ring,
+// see docs/nursery-pot-parametric-spec.md and
+// docs/features-wip/pot-floor-dome.mjs) — this replaced the earlier
+// raised-channel/hub-and-spoke groove design entirely, so the groove-only
+// regression cases that used to live here (ridge-width crowding check,
+// groove auto-disable on a small pot) no longer apply and have been
+// removed. A dedicated config at the exact reference pot size
+// (bottomR=50mm, topR=75mm, height=120mm, wallT=2.5mm) is included below.
 //
 // Exits with a non-zero code (and prints every failure) if any
 // configuration is not watertight (or rejected/accepted unexpectedly), so
@@ -35,27 +43,50 @@ const configs = [
   { label: "no drain holes", opts: { drainHoleCount: 0, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "low circular resolution (nSeg=24)", opts: { nSeg: 24, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "high circular resolution (nSeg=180)", opts: { nSeg: 180, liftNotchCount: 2, airSlotsEnabled: true } },
+  // KNOWN FAILING as of the dome floor rewrite: domeOuterR (flatTopR +
+  // slopeRun = 20mm) is a fixed absolute size, not scaled to pot size, so
+  // on a pot this small the dome's own outer flat ring no longer fits
+  // inside the floor at all (RBottomOuter < domeOuterR) and the mesh comes
+  // out non-watertight. This is explicitly out of scope for the current
+  // dome/logo rewrite (reference pot size only — see
+  // docs/nursery-pot-parametric-spec.md) and is left failing here on
+  // purpose so it isn't silently lost; scaling the dome to pot size is
+  // tracked as follow-up work, not fixed in this pass.
   { label: "small pot (forces drain-hole/slot-count reduction)", opts: { outerTopDiam: 40, height: 100, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "short pot (notch/slots should auto-disable)", opts: { height: 20, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "large pot", opts: { outerTopDiam: 400, height: 350, liftNotchCount: 2, airSlotsEnabled: true } },
   // drainHoleCount: 0 here — this config exists to stress the notch's recess
-  // clamping against a thick wall, not base grooves; leaving drain holes on
-  // would also exercise (and, at wallT=8mm, correctly trip) the groove
-  // hole-clearance check below, which isn't what this case is testing for.
+  // clamping against a thick wall; leaving drain holes on would also
+  // exercise the dome's hole-placement/auto-shrink logic at wallT=8mm,
+  // which isn't what this case is testing for.
   { label: "thick wall (notch recess less clamped)", opts: { wallT: 8.0, liftNotchCount: 2, airSlotsEnabled: true, drainHoleCount: 0 } },
-  { label: "base grooves + notch + slots", opts: { liftNotchCount: 2, airSlotsEnabled: true, drainHoleCount: 8 } },
-  { label: "base grooves, few drain holes", opts: { drainHoleCount: 4 } },
-  { label: "base grooves, small pot (grooves should auto-disable)", opts: { outerTopDiam: 35, height: 60, drainHoleCount: 6 } },
-  // 12 grooves at the faceted profile's fixed 0.25 rad full half-angle
-  // leaves less than a full angle's worth of ridge per groove — the
-  // ridge-to-ridge width check should reject this rather than silently
-  // build a knife-edge (or overlapping) ridge.
-  { label: "base grooves, many drain holes on a large pot (ridge too thin)", opts: { outerTopDiam: 300, height: 250, drainHoleCount: 12 }, expectReject: true },
-  { label: "base grooves, low circular resolution", opts: { nSeg: 24, drainHoleCount: 8 } },
-  // Dedicated regression cases for the Task 1 fix itself — prove both new
-  // checks actually fire on known-bad geometry, not just that they compile.
-  { label: "[regression] ridge-width check rejects an overcrowded groove count", opts: { drainHoleCount: 16 }, expectReject: true },
-  { label: "[regression] hole-clearance check rejects an oversized drain hole", opts: { drainHoleCount: 6, drainHoleDiam: 16 }, expectReject: true },
+  { label: "dome floor + notch + slots", opts: { liftNotchCount: 2, airSlotsEnabled: true, drainHoleCount: 8 } },
+  { label: "dome floor, few drain holes", opts: { drainHoleCount: 4 } },
+  // Small floor forces the drain-hole placement logic to shrink hole
+  // diameter/count to keep clearance from the dome slope and inner wall
+  // (see calculator.js's dome drainage-hole block) — should still resolve
+  // to a valid, watertight mesh, not reject.
+  // KNOWN FAILING for the same reason as the small-pot case above — same
+  // fixed-size-dome-doesn't-fit issue, not the hole-shrink logic itself.
+  { label: "dome floor, small pot (holes should auto-shrink)", opts: { outerTopDiam: 35, height: 60, drainHoleCount: 6 } },
+  { label: "dome floor, large pot, many drain holes", opts: { outerTopDiam: 300, height: 250, drainHoleCount: 12 } },
+  { label: "dome floor, low circular resolution", opts: { nSeg: 24, drainHoleCount: 8 } },
+  // Exact reference pot size from the dome/logo spec: bottomR=50mm,
+  // topR=75mm, height=120mm, wallT=2.5mm. draftDeg is derived since
+  // resolvePot takes outerTopDiam/draftDeg rather than bottomR directly:
+  // atan((topR-bottomR)/height) = atan(25/120) ≈ 11.768deg.
+  {
+    label: "[reference pot] bottomR=50 topR=75 height=120 wallT=2.5",
+    opts: {
+      outerTopDiam: 150,
+      height: 120,
+      wallT: 2.5,
+      floorT: 2.5,
+      draftDeg: (Math.atan((75 - 50) / 120) * 180) / Math.PI,
+      drainHoleCount: 8,
+      drainHoleDiam: 5.0,
+    },
+  },
 ];
 
 let failures = 0;
@@ -69,7 +100,7 @@ for (const { label, opts, expectReject } of configs) {
       wallT: 1.6,
       floorT: 1.6,
       drainHoleCount: 8,
-      drainHoleDiam: 6.0,
+      drainHoleDiam: 5.0,
       nSeg: 96,
       ...opts,
     });
