@@ -1,22 +1,13 @@
 import * as calc from "./calculator.js";
 import { buildPotMesh } from "./potBuilder.js";
-import { writeBinarySTL, readSTL, meshStats } from "./stlIO.js";
-import { analyzeDecorativePot, formatAnalysisReport } from "./stlDerive.js";
+import { writeBinarySTL, meshStats } from "./stlIO.js";
 import { PotViewer } from "./viewer.js";
 import { renderDiagram } from "./diagram.js";
 
 const $ = (id) => document.getElementById(id);
 
 const els = {
-  modeContainer: $("modeContainer"),
-  modeDirect: $("modeDirect"),
-  containerPanel: $("containerPanel"),
-  directPanel: $("directPanel"),
-  stlDrop: $("stlDrop"),
-  stlFileInput: $("stlFileInput"),
-  stlStatus: $("stlStatus"),
-  ctd: $("ctd"), cbd: $("cbd"), cdep: $("cdep"),
-  ttd: $("ttd"), th: $("th"),
+  topDiam: $("topDiam"), bottomDiam: $("bottomDiam"), depth: $("depth"),
   draftDeg: $("draftDeg"), wallT: $("wallT"), floorT: $("floorT"), clearance: $("clearance"),
   heightClearance: $("heightClearance"),
   holes: $("holes"), holeDiam: $("holeDiam"),
@@ -53,21 +44,6 @@ function num(el, fallback) {
   return Number.isFinite(v) ? v : fallback;
 }
 
-function getMode() {
-  return els.modeDirect.checked ? "direct" : "container";
-}
-
-function setMode(mode) {
-  const isContainer = mode !== "direct";
-  els.modeContainer.checked = isContainer;
-  els.modeDirect.checked = !isContainer;
-  els.containerPanel.hidden = !isContainer;
-  els.directPanel.hidden = isContainer;
-}
-
-els.modeContainer.addEventListener("change", () => { setMode("container"); scheduleDiagramUpdate(); updateGenerateEnabled(); });
-els.modeDirect.addEventListener("change", () => { setMode("direct"); scheduleDiagramUpdate(); updateGenerateEnabled(); });
-
 function getLiftNotchCount() {
   const checked = document.querySelector('input[name="liftNotchCount"]:checked');
   return checked ? Math.round(parseFloat(checked.value)) : 0;
@@ -93,47 +69,17 @@ function readAdvanced() {
 }
 
 // ---------------------------------------------------------------------
-// STL upload -> auto-fill container fields
+// Read the unified field set. Bottom diameter is optional — undefined/NaN
+// simply means "don't know it", and calculator.js treats a missing
+// containerBottomInnerDiam as "model without taper correction".
 // ---------------------------------------------------------------------
 
-els.stlDrop.addEventListener("click", () => els.stlFileInput.click());
-els.stlDrop.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  els.stlDrop.classList.add("dragover");
-});
-els.stlDrop.addEventListener("dragleave", () => els.stlDrop.classList.remove("dragover"));
-els.stlDrop.addEventListener("drop", (e) => {
-  e.preventDefault();
-  els.stlDrop.classList.remove("dragover");
-  const file = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (file) handleStlFile(file);
-});
-els.stlFileInput.addEventListener("change", () => {
-  const file = els.stlFileInput.files[0];
-  if (file) handleStlFile(file);
-});
-
-async function handleStlFile(file) {
-  els.stlStatus.hidden = false;
-  els.stlStatus.textContent = `Analyzing ${file.name}…`;
-  try {
-    const buf = await file.arrayBuffer();
-    const tris = readSTL(buf);
-    const result = analyzeDecorativePot(tris);
-    els.ctd.value = result.containerTopInnerDiam.toFixed(1);
-    els.cbd.value = result.containerBottomInnerDiam.toFixed(1);
-    els.cdep.value = result.containerInnerDepth.toFixed(1);
-    let msg = `Detected from ${file.name}:\n` + formatAnalysisReport(result);
-    if (result.warnings.length) {
-      msg += "\n\n" + result.warnings.map((w) => `⚠ ${w}`).join("\n");
-    }
-    msg += "\n\nFields below are editable — adjust if these look off.";
-    els.stlStatus.textContent = msg;
-    scheduleDiagramUpdate();
-    updateGenerateEnabled();
-  } catch (err) {
-    els.stlStatus.textContent = `Couldn't read that STL: ${err.message}`;
-  }
+function readFields() {
+  const topDiam = num(els.topDiam, NaN);
+  const depth = num(els.depth, NaN);
+  const bottomDiamRaw = num(els.bottomDiam, NaN);
+  const bottomDiam = Number.isFinite(bottomDiamRaw) ? bottomDiamRaw : null;
+  return { topDiam, depth, bottomDiam };
 }
 
 // ---------------------------------------------------------------------
@@ -141,37 +87,24 @@ async function handleStlFile(file) {
 // ---------------------------------------------------------------------
 
 function tryResolveSpec() {
-  const mode = getMode();
+  const { topDiam, depth, bottomDiam } = readFields();
+  if (![topDiam, depth].every(Number.isFinite)) return null;
   const advanced = readAdvanced();
   try {
-    if (mode === "container") {
-      const ctd = num(els.ctd, NaN), cbd = num(els.cbd, NaN), cdep = num(els.cdep, NaN);
-      if (![ctd, cbd, cdep].every(Number.isFinite)) return null;
-      return calc.sizeFromContainerInner({
-        containerTopInnerDiam: ctd,
-        containerBottomInnerDiam: cbd,
-        containerInnerDepth: cdep,
-        ...advanced,
-      });
-    }
-    const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
-    if (![ttd, th].every(Number.isFinite)) return null;
-    return calc.sizeFromContainerSimple({ containerTopInnerDiam: ttd, containerInnerDepth: th, ...advanced });
+    return calc.sizeFromContainerInner({
+      containerTopInnerDiam: topDiam,
+      containerBottomInnerDiam: bottomDiam,
+      containerInnerDepth: depth,
+      ...advanced,
+    });
   } catch (err) {
     return null;
   }
 }
 
 function updateDiagram() {
-  const mode = getMode();
-  let outer;
-  if (mode === "container") {
-    const ctd = num(els.ctd, NaN), cbd = num(els.cbd, NaN), cdep = num(els.cdep, NaN);
-    outer = { topDiam: ctd, bottomDiam: Number.isFinite(cbd) ? cbd : null, depth: cdep };
-  } else {
-    const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
-    outer = { topDiam: ttd, bottomDiam: null, depth: th };
-  }
+  const { topDiam, depth, bottomDiam } = readFields();
+  const outer = { topDiam, bottomDiam, depth };
 
   const spec = tryResolveSpec();
   const inner = spec ? { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height } : null;
@@ -180,7 +113,7 @@ function updateDiagram() {
     outer,
     inner,
     holeCount: spec ? spec.drainHoleCount : 0,
-    showBottomRuler: mode === "container",
+    showBottomRuler: true,
   });
 }
 
@@ -213,30 +146,21 @@ els.chipStlLink.addEventListener("click", downloadStl);
 els.copyLinkBtn.addEventListener("click", copyLink);
 
 async function generate(updateUrl) {
-  const mode = getMode();
+  const { topDiam, depth, bottomDiam } = readFields();
   const advanced = readAdvanced();
+  if (!Number.isFinite(topDiam) || !Number.isFinite(depth)) {
+    alert("Fill in your decorative pot's inner top diameter and depth.");
+    return;
+  }
+
   let spec;
   try {
-    if (mode === "container") {
-      const ctd = num(els.ctd, NaN), cbd = num(els.cbd, NaN), cdep = num(els.cdep, NaN);
-      if (!Number.isFinite(ctd) || !Number.isFinite(cbd) || !Number.isFinite(cdep)) {
-        alert("Fill in the container's inner top diameter, bottom diameter, and depth (or upload an STL to auto-fill them).");
-        return;
-      }
-      spec = calc.sizeFromContainerInner({
-        containerTopInnerDiam: ctd,
-        containerBottomInnerDiam: cbd,
-        containerInnerDepth: cdep,
-        ...advanced,
-      });
-    } else {
-      const ttd = num(els.ttd, NaN), th = num(els.th, NaN);
-      if (!Number.isFinite(ttd) || !Number.isFinite(th)) {
-        alert("Fill in your decorative pot's inner top diameter and depth.");
-        return;
-      }
-      spec = calc.sizeFromContainerSimple({ containerTopInnerDiam: ttd, containerInnerDepth: th, ...advanced });
-    }
+    spec = calc.sizeFromContainerInner({
+      containerTopInnerDiam: topDiam,
+      containerBottomInnerDiam: bottomDiam,
+      containerInnerDepth: depth,
+      ...advanced,
+    });
   } catch (err) {
     alert(`Couldn't compute a pot: ${err.message}`);
     return;
@@ -276,20 +200,17 @@ async function generate(updateUrl) {
     `Liner: Ø${spec.outerTopDiam.toFixed(0)} top · Ø${spec.outerBottomDiam.toFixed(0)} bottom · ${spec.height.toFixed(0)}mm`;
 
   renderDiagram(els.diagramSvgWrap, {
-    outer:
-      mode === "container"
-        ? { topDiam: num(els.ctd, NaN), bottomDiam: num(els.cbd, NaN), depth: num(els.cdep, NaN) }
-        : { topDiam: num(els.ttd, NaN), bottomDiam: null, depth: num(els.th, NaN) },
+    outer: { topDiam, bottomDiam, depth },
     inner: { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height },
     holeCount: spec.drainHoleCount,
-    showBottomRuler: mode === "container",
+    showBottomRuler: true,
   });
 
   // AR exports (GLB + USDZ) — don't block the visible report/preview on these
   setupAR(triangles).catch((err) => console.warn("AR export failed:", err));
 
   if (updateUrl) {
-    const params = buildStateParams(mode, advanced);
+    const params = buildStateParams(advanced);
     history.replaceState(null, "", "?" + params.toString());
     renderShareTarget();
   }
@@ -352,20 +273,14 @@ async function copyLink() {
 
 // ---------------------------------------------------------------------
 // URL state (also what the QR code encodes for the phone to reproduce
-// the same pot without needing the original STL upload again)
+// the same pot)
 // ---------------------------------------------------------------------
 
-function buildStateParams(mode, advanced) {
+function buildStateParams(advanced) {
   const p = new URLSearchParams();
-  p.set("mode", mode);
-  if (mode === "container") {
-    p.set("ctd", els.ctd.value);
-    p.set("cbd", els.cbd.value);
-    p.set("cdep", els.cdep.value);
-  } else {
-    p.set("ttd", els.ttd.value);
-    p.set("th", els.th.value);
-  }
+  p.set("td", els.topDiam.value);
+  p.set("dep", els.depth.value);
+  if (els.bottomDiam.value) p.set("bd", els.bottomDiam.value);
   p.set("draft", advanced.draftDeg);
   p.set("wall", advanced.wallT);
   p.set("floor", advanced.floorT);
@@ -381,17 +296,22 @@ function buildStateParams(mode, advanced) {
 
 function applyStateFromURL() {
   const p = new URLSearchParams(location.search);
-  if (!p.has("mode")) return false;
+  if (!p.has("td") && !p.has("ttd") && !p.has("ctd")) return false;
 
-  setMode(p.get("mode"));
-  if (p.get("mode") === "container") {
-    if (p.has("ctd")) els.ctd.value = p.get("ctd");
-    if (p.has("cbd")) els.cbd.value = p.get("cbd");
-    if (p.has("cdep")) els.cdep.value = p.get("cdep");
-  } else {
-    if (p.has("ttd")) els.ttd.value = p.get("ttd");
-    if (p.has("th")) els.th.value = p.get("th");
-  }
+  // "td"/"dep"/"bd" are the current param names; "ttd"/"th" (Simple) and
+  // "ctd"/"cbd"/"cdep" (Full) are accepted too so links shared before the
+  // single-form redesign still work.
+  if (p.has("td")) els.topDiam.value = p.get("td");
+  else if (p.has("ttd")) els.topDiam.value = p.get("ttd");
+  else if (p.has("ctd")) els.topDiam.value = p.get("ctd");
+
+  if (p.has("dep")) els.depth.value = p.get("dep");
+  else if (p.has("th")) els.depth.value = p.get("th");
+  else if (p.has("cdep")) els.depth.value = p.get("cdep");
+
+  if (p.has("bd")) els.bottomDiam.value = p.get("bd");
+  else if (p.has("cbd")) els.bottomDiam.value = p.get("cbd");
+
   if (p.has("draft")) els.draftDeg.value = p.get("draft");
   if (p.has("wall")) els.wallT.value = p.get("wall");
   if (p.has("floor")) els.floorT.value = p.get("floor");
