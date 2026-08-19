@@ -568,74 +568,170 @@ export function manifoldCheck(triangles, eps = 1e-6) {
 }
 
 // ---------------------------------------------------------------------
-// Base grooves — radial drainage/venting channels recessed into the
-// underside of the floor. Radial (r) shape ported verbatim from the
-// tested reference docs/features-wip/pot-floor.mjs (mm-converted; the
-// reference uses meters) — do not re-derive this: a first attempt warped
-// a flat ear-clip-triangulated cap's z by an (r,theta) height field, but
-// ear-clipping only places vertices on the outer boundary and hole loops,
-// nothing in the interior, so there was no real grid for the ramp to sit
-// on — the interior got filled by arbitrary long fan triangles, which is
-// what produced the spiky/chaotic pattern instead of clean channels.
-// pot-floor.mjs fixes this by giving the floor its own proper radial x
-// angular GRID (same idea as the wall's ring loft in ringStack above) —
-// see radialGrid() below, which reuses that exact same grid shape so it
-// can plug into the already-proven wallGridFaces/findGridHoleLoops/
-// stitchWallGridHoles hole-cutting pipeline for the drain holes.
+// Dome floor — replaces the earlier raised-channel/hub-and-spoke base
+// design entirely (see docs/nursery-pot-parametric-spec.md). Rejected
+// after repeated print failures: cantilevers, floating islands, and base
+// openings visible on both faces. The dome is a single continuous,
+// radially-symmetric (theta-independent) surface: a flat plateau at the
+// center, a straight conical slope down to a flat outer ring, by
+// construction always resting on/self-supported by material below it as
+// printing proceeds outward from the flat outer ring's bed contact —
+// zero bridging, zero cantilevers, no careful tuning required.
 //
-// Tangential (theta) shape ported verbatim from docs/features-wip/
-// pot-floor-angular.mjs — a physical print of the original smooth cosine
-// taper came out paper-thin and failed right around the drain holes,
-// where the curve was steepest: offsetting a surface along its normal to
-// hold wall thickness constant is only exact on FLAT facets, so on a
-// smooth curve the true printed thickness drifts from the intended
-// value. pot-floor-angular.mjs fixes this by making the tangential
-// profile FACETED (a flat groove floor + a short linear transition + a
-// flat ridge), never a curve — see grooveAngularProfile() below, do not
-// re-derive this back into a cosine.
+// domeHeight(r) is baked into the EXTERIOR (ground-facing) surface. The
+// exterior's flat outer ring sits at z=0 (full first-layer bed contact,
+// same as the pot's outer wall), the exterior's plateau stands proud of
+// that at z=domeRise — a self-supporting cone rising from the bed, not a
+// suspended bump. The interior (soil-facing) surface is this same shape
+// offset by wallT along the TRUE surface normal (see offsetProfileInward
+// below) — not a naive vertical shift — so every one of the three zones
+// (flat / straight cone / flat) is an EXACT geometric offset, the same
+// principle Task 1's faceted groove fix used tangentially, now applied
+// radially. This is what keeps wall thickness genuinely constant instead
+// of a gap/height parameter silently eating into it (a real bug from
+// the earlier design: a channel gap equal to wallT left zero material).
 // ---------------------------------------------------------------------
 
-// 0 at r <= hubRadius (flush with the hub/bed), a LINEAR ramp to 1 over
-// the next `rampMM` of radius (rise==run over rampMM, exactly 45 degrees
-// by construction — matches pot-floor.mjs's/pot-floor-angular.mjs's
-// radialTaper() exactly), then 1.0 the rest of the way to the pot's edge.
-export function grooveRadialTaper(r, hubRadius, rampMM = 1.2) {
-  if (r <= hubRadius) return 0.0;
-  if (r >= hubRadius + rampMM) return 1.0;
-  return (r - hubRadius) / rampMM;
+// Piecewise: flat plateau (r<=flatTopR) at z=domeRise, straight slope
+// down to z=0 at r=domeOuterR=flatTopR+slopeRun, flat (z=0) beyond.
+export function domeHeight(r, flatTopR, domeRise, slopeRun) {
+  const domeOuterR = flatTopR + slopeRun;
+  if (r <= flatTopR) return domeRise;
+  if (r <= domeOuterR) return domeRise * (1 - (r - flatTopR) / slopeRun);
+  return 0;
 }
 
-// 1.0 within +/-flatHalfAngle of a groove center (flat channel floor),
-// linearly down to 0.0 over the next `transitionAngle` (the only place
-// the surface isn't flat — a short straight ramp, not a curve), 0.0
-// beyond that (flat ridge). Matches pot-floor-angular.mjs's
-// angularProfile() exactly.
-export function grooveAngularProfile(d, flatHalfAngle, transitionAngle) {
-  const ad = Math.abs(d);
-  if (ad <= flatHalfAngle) return 1.0;
-  const fullHalfAngle = flatHalfAngle + transitionAngle;
-  if (ad >= fullHalfAngle) return 0.0;
-  return 1.0 - (ad - flatHalfAngle) / transitionAngle;
+// The dome slope's angle from horizontal, in degrees — this is exactly
+// the quantity the spec locks in at 38.7 deg (domeRise=8, slopeRun=10)
+// and requires stay <=45 deg. If flatTopR/domeRise/slopeRun ever change,
+// call this again rather than assuming the angle is still safe.
+export function domeSlopeAngleDeg(domeRise, slopeRun) {
+  return (Math.atan2(domeRise, slopeRun) * 180) / Math.PI;
 }
 
-// Combined channel height (mm, positive = lifted off the bed) at (r,
-// theta) from every groove in `grooveCenters` (array of theta values in
-// radians, one per drain hole). Matches pot-floor-angular.mjs's
-// grooveBottomZ() exactly: multiple grooves combine via MAX (not sum),
-// so overlapping tapers can never double up past the intended depth.
-export function grooveOffsetAt(r, theta, grooveCenters, hubRadius, opts = {}) {
-  if (!grooveCenters || grooveCenters.length === 0) return 0;
-  const { gapMM = 1.2, rampMM = 1.2, flatHalfAngle = 0.2, transitionAngle = 0.05 } = opts;
-  const radial = grooveRadialTaper(r, hubRadius, rampMM);
-  if (radial <= 0) return 0;
-  let best = 0;
-  for (const c of grooveCenters) {
-    let d = theta - c;
-    d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to [-pi, pi]
-    const t = grooveAngularProfile(d, flatHalfAngle, transitionAngle);
-    if (t > best) best = t;
+// True per-segment-normal offset of an open piecewise-linear profile
+// (array of [r,z] points, at least 2), moved INWARD (toward the solid
+// material on the far side) by `thickness`. This is the general
+// "solidify a profile" operation: a naive offset that just shifts every
+// point's z by a constant is only exact where the profile is flat — this
+// instead offsets each straight segment along its own true 2D normal,
+// then re-intersects adjacent offset segments at each interior corner
+// (standard mitered-polyline-offset construction), so it stays exact
+// through the dome's slope and both flat zones, and stays correct for
+// any flatTopR/domeRise/slopeRun without needing to re-derive it by hand.
+//
+// Normal convention: for a segment's tangent (tr,tz) in the direction of
+// increasing r, the OUTWARD (away-from-solid) unit normal is
+// normalize(tz,-tr) — verified against the flat zones, where solid
+// material sits above the profile (z increases into the solid) and this
+// formula correctly gives a purely -z outward normal. offsetProfileInward
+// moves each point by `thickness` along the opposite (-outward) direction.
+export function offsetProfileInward(profile, thickness) {
+  const segs = [];
+  for (let i = 0; i < profile.length - 1; i++) {
+    const [r0, z0] = profile[i];
+    const [r1, z1] = profile[i + 1];
+    const tr = r1 - r0, tz = z1 - z0;
+    const len = Math.hypot(tr, tz) || 1;
+    const nr = tz / len, nz = -tr / len; // outward normal
+    // Offset line: passes through (r0,z0) shifted by -thickness*normal,
+    // direction (tr,tz).
+    const or0 = r0 - thickness * nr, oz0 = z0 - thickness * nz;
+    segs.push({ or0, oz0, tr, tz });
   }
-  return gapMM * radial * best;
+
+  function lineIntersect(a, b) {
+    // a,b: {or0,oz0,tr,tz} — solve a.point + s*a.dir == b.point + t*b.dir
+    const det = a.tr * b.tz - a.tz * b.tr;
+    if (Math.abs(det) < 1e-12) {
+      // Parallel (shouldn't happen for this profile's distinct segment
+      // angles) — fall back to segment a's own offset point.
+      return [a.or0, a.oz0];
+    }
+    const dr = b.or0 - a.or0, dz = b.oz0 - a.oz0;
+    const s = (dr * b.tz - dz * b.tr) / det;
+    return [a.or0 + s * a.tr, a.oz0 + s * a.tz];
+  }
+
+  const out = [];
+  for (let i = 0; i < profile.length; i++) {
+    if (i === 0) {
+      out.push([segs[0].or0, segs[0].oz0]);
+    } else if (i === profile.length - 1) {
+      const s = segs[segs.length - 1];
+      out.push([s.or0 + s.tr, s.oz0 + s.tz]);
+    } else {
+      out.push(lineIntersect(segs[i - 1], segs[i]));
+    }
+  }
+  return out;
+}
+
+// Flat disc cap triangulated via earClip across its own boundary
+// vertices, NOT a single-point fan — the parametric spec bans
+// single-point vertex fans everywhere (they produce degenerate normals
+// under thickness-offset and can push geometry to the wrong side of a
+// surface), even at a shape's center. Use this in place of flatDiscFan
+// wherever a cap's center matters (e.g. any cap a later feature might
+// need to carry detail on).
+export function ngonCap(radius, z, n, facingUp = true) {
+  const { triangles, pts } = earClip(circleXY(radius, n));
+  const out = [];
+  for (const [i0, i1, i2] of triangles) {
+    const p0 = [pts[i0][0], pts[i0][1], z];
+    const p1 = [pts[i1][0], pts[i1][1], z];
+    const p2 = [pts[i2][0], pts[i2][1], z];
+    out.push(facingUp ? [p0, p1, p2] : [p0, p2, p1]);
+  }
+  return out;
+}
+
+// Extrudes a single simple closed 2D polygon (array of [x,y] points, no
+// holes) into a solid prism from z=zBase to z=zBase+height: bottom cap,
+// top cap, and side walls — a fully independent, individually watertight
+// solid. Used for the logo emboss: each letter/dot polygon in
+// logo-data.mjs becomes its own small prism resting on the floor's flat
+// plateau. No boolean/CSG union with the plateau underneath is needed —
+// two solids that share a flat contact plane are already a valid,
+// printable construction (this is also why the prism keeps its own
+// bottom cap rather than trying to weld into the plateau's triangulation:
+// each solid stays independently closed, which is what lets a slicer
+// process the touching pair correctly instead of one having an open,
+// non-manifold boundary).
+export function polygonPrism(poly2DIn, zBase, height) {
+  // Defensive dedup: source polygon data (e.g. parsed from an SVG path
+  // that explicitly closes back to its start point) can include a
+  // redundant final vertex coincident with the first. A zero-length edge
+  // like that breaks earClip's ear-finding by exactly one triangle,
+  // leaving a small boundary gap instead of a closed cap.
+  const poly2D = poly2DIn.filter((p, i) => {
+    const q = poly2DIn[(i + 1) % poly2DIn.length];
+    return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-9;
+  });
+  const zTop = zBase + height;
+  const { triangles, pts } = earClip(poly2D);
+  const tris = [];
+  for (const [i0, i1, i2] of triangles) {
+    const b0 = [pts[i0][0], pts[i0][1], zBase];
+    const b1 = [pts[i1][0], pts[i1][1], zBase];
+    const b2 = [pts[i2][0], pts[i2][1], zBase];
+    tris.push([b0, b2, b1]); // bottom, facing down
+    const t0 = [pts[i0][0], pts[i0][1], zTop];
+    const t1 = [pts[i1][0], pts[i1][1], zTop];
+    const t2 = [pts[i2][0], pts[i2][1], zTop];
+    tris.push([t0, t1, t2]); // top, facing up
+  }
+  // quadStrip's outward=true assumes its ring is traversed CCW (viewed
+  // from +z), the same assumption circleXY's rings satisfy — but
+  // poly2D's own winding is whatever the source data used, so normalize
+  // it here rather than assuming, same as earClip does internally for
+  // triangulation (that normalization doesn't affect ringBase/ringTop,
+  // which are built straight from poly2D's own point order).
+  const ccwPoly = signedArea(poly2D) < 0 ? poly2D.slice().reverse() : poly2D;
+  const ringBase = ccwPoly.map(([x, y]) => [x, y, zBase]);
+  const ringTop = ccwPoly.map(([x, y]) => [x, y, zTop]);
+  tris.push(...quadStrip(ringBase, ringTop, true));
+  return tris;
 }
 
 // A stack of rings swept over RADIUS instead of z (mirrors wallGrid
