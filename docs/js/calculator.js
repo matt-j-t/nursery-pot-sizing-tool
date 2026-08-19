@@ -9,7 +9,7 @@ export const DEFAULTS = {
   clearanceTotal: 3.0,
   heightClearance: 5.0,
   drainHoleCount: 8,
-  drainHoleDiam: 6.0,
+  drainHoleDiam: 5.0,
   nSeg: 144,
   liftNotchCount: 0,
   airSlotsEnabled: false,
@@ -29,7 +29,7 @@ const MIN_INNER_FLOOR_DIAM = 15.0;
 const NOTCH_HALF_WIDTH_MM = 10.0;
 const NOTCH_RECESS_MM = 6.0;
 const NOTCH_FADE_SPAN_MM = 18.0;
-// Below this usable wall span (height - floorT), a notch can't fade in
+// Below this usable wall span (height - wallT), a notch can't fade in
 // cleanly above the floor-top cap — disable rather than distort it.
 const NOTCH_MIN_WALL_SPAN_MM = 8.0;
 
@@ -50,25 +50,20 @@ const AIR_SLOT_MIN_GAP_MM = 1.5; // hard structural minimum — only used as a c
 const AIR_SLOT_N_RINGS = 2; // just enough rings to bound the band; no taper to resolve
 const AIR_SLOT_MIN_BAND_MM = 10.0;
 
-// Base grooves — radial drainage/venting channels recessed into the
-// underside of the floor, one per drain hole, running from a central hub
-// out to the pot's outer edge (open there, so the channel stays exposed
-// to air even when the pot sits flush on a surface). Baked directly into
-// the bottom surface's height as a function of (r, theta) — a linear
-// radial ramp swept over radius, and a FACETED (flat + linear transition,
-// not a cosine curve) angular profile — see geo.grooveOffsetAt. The
-// angular profile was switched from a cosine curve to this faceted one
-// specifically because the wall-thickness-by-normal-offset technique only
-// holds exactly on flat facets; a physical print of the cosine version
-// came out paper-thin and failed right around the drain holes, where the
-// curve was steepest. See docs/features-wip/pot-floor-angular.mjs.
-const GROOVE_HUB_RADIUS_MM = 15.0;
-const GROOVE_GAP_MM = 1.2; // how far the channel floor lifts off the bed at its raised plateau
-const GROOVE_RAMP_MM = 1.2; // radial run of the ramp up from the hub (rise==run, 45-deg safe)
-const GROOVE_FLAT_HALF_ANGLE_RAD = 0.2; // angular half-width of the groove's flat channel floor
-const GROOVE_TRANSITION_ANGLE_RAD = 0.05; // angular width of the ramp from flat channel floor up to flat ridge
-const GROOVE_MIN_ANNULUS_MM = 8.0; // minimum hubRadius..RBottomOuter span needed to bother
-const GROOVE_MIN_RIDGE_WIDTH_MM = 4.0; // minimum solid ridge width left between adjacent grooves at the hub
+// Dome floor — replaces the earlier raised-channel/hub-and-spoke base
+// entirely (see docs/nursery-pot-parametric-spec.md). A flat plateau at
+// the center, a straight conical slope down to a flat outer ring at the
+// pot's normal wallT, then round drain holes near the outer edge — one
+// continuous, radially-symmetric surface that's always self-supported
+// (each new printed layer sits on solid material below it, starting from
+// the flat outer ring's full bed contact and rising smoothly to the
+// plateau), by construction rather than by careful tuning. See
+// geo.domeHeight / geo.offsetProfileInward / docs/features-wip/pot-floor-dome.mjs.
+const DOME_FLAT_TOP_R_MM = 10.0; // FIXED — sized to frame the ~12x5mm logo with margin
+const DOME_RISE_MM = 8.0; // reference — how far the plateau stands above the outer flat zone
+const DOME_SLOPE_RUN_MM = 10.0; // reference — radial distance the rise happens over
+const DOME_MAX_SLOPE_ANGLE_DEG = 45.0; // global print-safety rule — no exceptions
+const DOME_HOLE_MARGIN_MM = 2.0; // min clearance kept between drain holes and the dome slope / outer wall
 
 const deg2rad = (d) => (d * Math.PI) / 180.0;
 
@@ -143,20 +138,29 @@ export function resolvePot({
   }
   const outerBottomDiam = 2 * RBottomOuter;
 
+  // The dome floor's flat outer ring sits at z=wallT (its thickness is the
+  // pot's normal wallT, same as the walls — see docs/nursery-pot-parametric-spec.md).
+  // floorT is still accepted as a parameter (so the existing UI field keeps
+  // working) but no longer drives any geometry; noted below rather than
+  // silently ignored.
   const wallTHorizontal = wallT / Math.cos(deg2rad(draftUsedDeg));
   const RTopInner = RTopOuter - wallTHorizontal;
-  const ROuterAtFloorTop = RBottomOuter + floorT * Math.tan(deg2rad(draftUsedDeg));
+  const ROuterAtFloorTop = RBottomOuter + wallT * Math.tan(deg2rad(draftUsedDeg));
   const RBottomInnerAtFloor = ROuterAtFloorTop - wallTHorizontal;
 
   const innerTopDiam = 2 * RTopInner;
   const innerBottomDiam = 2 * RBottomInnerAtFloor;
-  const usableDepth = height - floorT;
+  const usableDepth = height - wallT;
+
+  if (Math.abs(floorT - wallT) > 1e-6) {
+    notes.push(
+      `Floor thickness now follows wall thickness (${wallT.toFixed(2)}mm) for the dome base design — the ` +
+        `separate floor-thickness value (${floorT.toFixed(2)}mm) is no longer used.`
+    );
+  }
 
   if (wallT < MIN_PRINTABLE_WALL) {
     warnings.push(`Wall thickness ${wallT}mm is thinner than ${MIN_PRINTABLE_WALL}mm — too thin to print reliably.`);
-  }
-  if (floorT < MIN_PRINTABLE_FLOOR) {
-    warnings.push(`Floor thickness ${floorT}mm is thinner than ${MIN_PRINTABLE_FLOOR}mm — too thin to print reliably.`);
   }
   if (innerBottomDiam < MIN_INNER_FLOOR_DIAM) {
     warnings.push(
@@ -168,27 +172,60 @@ export function resolvePot({
     warnings.push(`Usable soil depth is only ${usableDepth.toFixed(1)}mm after floor thickness — check height input.`);
   }
 
+  // --- dome floor ---
+  // Angle re-derived from the actual flatTopR/domeRise/slopeRun in use
+  // (all three are currently fixed constants, but this is what the spec
+  // means by "don't change them without re-deriving and re-checking this
+  // stays <=45 deg" — computed here, every time, rather than trusted from
+  // memory) and hard-checked against the global 45 deg print-safety rule.
+  const domeOuterR = DOME_FLAT_TOP_R_MM + DOME_SLOPE_RUN_MM;
+  const domeAngleDeg = Math.atan2(DOME_RISE_MM, DOME_SLOPE_RUN_MM) * (180 / Math.PI);
+  if (domeAngleDeg > DOME_MAX_SLOPE_ANGLE_DEG) {
+    throw new Error(
+      `Dome floor: the slope from the plateau to the outer flat ring is ${domeAngleDeg.toFixed(1)} deg from ` +
+        `horizontal (domeRise=${DOME_RISE_MM}mm over slopeRun=${DOME_SLOPE_RUN_MM}mm), which exceeds the ` +
+        `${DOME_MAX_SLOPE_ANGLE_DEG.toFixed(0)} deg print-safety limit — reduce domeRise or increase slopeRun.`
+    );
+  }
+  if (RBottomOuter - domeOuterR < DOME_HOLE_MARGIN_MM) {
+    warnings.push(
+      `Pot's bottom (outer radius ${RBottomOuter.toFixed(1)}mm) barely clears the dome's outer edge ` +
+        `(${domeOuterR.toFixed(1)}mm) — there may be little to no room left for drain holes.`
+    );
+  }
+
   // --- drainage holes ---
+  // Holes sit in the dome's flat outer ring: outboard of the slope
+  // (domeOuterR, plus a safety margin — the interior surface's own
+  // corresponding corner sits slightly further out than domeOuterR under
+  // a true wallT offset, see geo.offsetProfileInward, so this margin is
+  // deliberately conservative rather than exact) and inboard of the pot's
+  // outer wall.
   let holeR = drainHoleDiam / 2.0;
-  const margin = 2.0;
+  const margin = DOME_HOLE_MARGIN_MM;
+  const minBoltR = domeOuterR + wallT + margin;
   let maxBoltR = RBottomInnerAtFloor - holeR - margin;
   let nHoles = drainHoleCount;
   let dHole = drainHoleDiam;
-  if (maxBoltR <= holeR) {
-    dHole = Math.max(3.0, 2 * Math.max(maxBoltR - 1.0, 1.5));
+  if (maxBoltR <= holeR || maxBoltR <= minBoltR) {
+    dHole = Math.max(3.0, 2 * Math.max(maxBoltR - minBoltR - 1.0, 1.5));
     holeR = dHole / 2.0;
     maxBoltR = RBottomInnerAtFloor - holeR - margin;
     nHoles = Math.max(4, Math.min(nHoles, 6));
     warnings.push(
       `Floor is small — drain hole diameter reduced to ${dHole.toFixed(1)}mm to fit ${nHoles} holes ` +
-        `with clearance from the inner wall.`
+        `between the dome slope and the inner wall.`
     );
   }
-  let boltRHoles =
-    maxBoltR > holeR ? Math.max(maxBoltR * 0.75, holeR + margin) : Math.max(RBottomInnerAtFloor * 0.4, holeR + 0.5);
-  boltRHoles = maxBoltR > 0 ? Math.min(boltRHoles, maxBoltR) : holeR;
-  if (boltRHoles <= 0 || RBottomInnerAtFloor < holeR + margin) {
-    warnings.push("Inner floor is too small to fit any drainage holes with safe clearance — design needs a larger pot or thinner walls.");
+  // Push the ring as close to the outer wall as the margin allows (real
+  // pots keep drainage near the rim) rather than centering it in the
+  // available band.
+  let boltRHoles = maxBoltR > minBoltR ? maxBoltR : minBoltR;
+  if (boltRHoles <= minBoltR || maxBoltR < minBoltR) {
+    warnings.push(
+      "Floor is too small to fit any drainage holes between the dome's slope and the inner wall with safe " +
+        "clearance — design needs a larger pot or thinner walls."
+    );
     nHoles = 0;
   }
 
@@ -225,7 +262,7 @@ export function resolvePot({
     warnings.push(`Lift notch count ${notchCount} is invalid (must be 0, 1, or 2) — disabled.`);
     notchCount = 0;
   }
-  const wallSpan = height - floorT; // usable vertical span the notch can fade into, above the floor cap
+  const wallSpan = height - wallT; // usable vertical span the notch can fade into, above the floor cap
   let notchFadeSpanMM = Math.min(NOTCH_FADE_SPAN_MM, wallSpan * 0.95);
   if (notchCount > 0 && wallSpan < NOTCH_MIN_WALL_SPAN_MM) {
     warnings.push(
@@ -245,7 +282,7 @@ export function resolvePot({
     slotZLo = height * AIR_SLOT_ZLO_FRAC;
     slotZHi = Math.min(slotZLo + AIR_SLOT_HEIGHT_SPAN_MM, height * AIR_SLOT_MAX_ZHI_FRAC);
     const band = slotZHi - slotZLo;
-    if (band < AIR_SLOT_MIN_BAND_MM || slotZLo <= floorT + 1.0) {
+    if (band < AIR_SLOT_MIN_BAND_MM || slotZLo <= wallT + 1.0) {
       warnings.push(
         `Pot is too short for air slots (usable band ${Math.max(band, 0).toFixed(1)}mm) — disabled. ` +
           `Increase height to use air slots.`
@@ -286,70 +323,6 @@ export function resolvePot({
   }
   const slotCenters = slotsOn ? Array.from({ length: slotCount }, (_, i) => (2 * Math.PI * i) / slotCount) : [];
 
-  // --- base grooves ---
-  // One channel per drain hole (same angular positions), so each hole
-  // sits inside its own channel — see grooveCenters below.
-  let groovesOn = nHoles > 0;
-  if (groovesOn && RBottomOuter - GROOVE_HUB_RADIUS_MM < GROOVE_MIN_ANNULUS_MM) {
-    warnings.push(
-      `Pot's bottom is too small for base grooves (needs at least ` +
-        `${(GROOVE_HUB_RADIUS_MM + GROOVE_MIN_ANNULUS_MM).toFixed(0)}mm outer radius) — disabled.`
-    );
-    groovesOn = false;
-  }
-  if (groovesOn) {
-    // Ridge-to-ridge width check — ported verbatim from
-    // docs/features-wip/pot-floor-angular.mjs's buildFloorAngular(). The
-    // angular groove profile is faceted (flat channel floor + linear
-    // transition + flat ridge) specifically so wall-thickness-by-normal-
-    // offset holds exactly, but that only works if a real flat ridge is
-    // actually left standing between adjacent grooves at every radius —
-    // with enough grooves crowded into a full turn, the transitions from
-    // neighboring grooves can eat the ridge down to nothing (or negative,
-    // i.e. overlapping). Hard-fail rather than silently generate an
-    // impossible or knife-edge-thin ridge.
-    const anglePerGroove = (2 * Math.PI) / nHoles;
-    const grooveFullHalfAngle = GROOVE_FLAT_HALF_ANGLE_RAD + GROOVE_TRANSITION_ANGLE_RAD;
-    const ridgeAngle = anglePerGroove - 2 * grooveFullHalfAngle;
-    const ridgeWidthAtHub = ridgeAngle * (GROOVE_HUB_RADIUS_MM + GROOVE_RAMP_MM);
-    if (ridgeAngle <= 0 || ridgeWidthAtHub < GROOVE_MIN_RIDGE_WIDTH_MM) {
-      throw new Error(
-        `Base grooves: the ridge between adjacent channels is only ${Math.max(ridgeWidthAtHub, 0).toFixed(2)}mm ` +
-          `wide at the hub (needs at least ${GROOVE_MIN_RIDGE_WIDTH_MM.toFixed(1)}mm) — reduce drain hole count ` +
-          `or increase hub radius.`
-      );
-    }
-
-    // Hole-to-transition-zone clearance check — NOT covered by the ridge
-    // check above, and specifically where the physical print failed: each
-    // drain hole is centered on its groove's flat channel floor, but if
-    // the hole's own edge reaches into the transition zone (where the
-    // exterior surface is ramping up toward the ridge), the solid
-    // material around the hole there is thinner than intended, the same
-    // way it was on the old cosine curve. Measure the actual clearance
-    // (arc length, in mm, from the hole's edge to where the transition
-    // zone starts) and require it to be at least wallT.
-    if (boltRHoles > 0) {
-      const holeHalfAngle = Math.asin(Math.min(1, holeR / boltRHoles));
-      const clearanceMM = (GROOVE_FLAT_HALF_ANGLE_RAD - holeHalfAngle) * boltRHoles;
-      if (clearanceMM < wallT) {
-        throw new Error(
-          `Base grooves: a drain hole is only ${clearanceMM.toFixed(2)}mm from its groove's transition zone ` +
-            `(needs at least the wall thickness, ${wallT.toFixed(2)}mm) — this is where the print failed before. ` +
-            `Reduce drain hole diameter or count, or adjust the bolt circle.`
-        );
-      }
-    }
-  }
-  if (groovesOn && floorT - GROOVE_GAP_MM < MIN_PRINTABLE_FLOOR) {
-    notes.push(
-      `Base grooves thin the floor locally to ${(floorT - GROOVE_GAP_MM).toFixed(2)}mm at each channel ` +
-        `(floor thickness ${floorT.toFixed(2)}mm minus the ${GROOVE_GAP_MM.toFixed(1)}mm channel gap) — ` +
-        `increase floor thickness if this needs to stay above the usual ${MIN_PRINTABLE_FLOOR.toFixed(2)}mm minimum.`
-    );
-  }
-  const grooveCenters = groovesOn ? Array.from({ length: nHoles }, (_, i) => (2 * Math.PI * i) / nHoles) : [];
-
   return {
     height,
     draftDeg: draftUsedDeg,
@@ -379,13 +352,12 @@ export function resolvePot({
     slotZLo,
     slotZHi,
     slotNRings: AIR_SLOT_N_RINGS,
-    groovesEnabled: groovesOn,
-    grooveCenters,
-    hubRadiusMM: GROOVE_HUB_RADIUS_MM,
-    grooveGapMM: GROOVE_GAP_MM,
-    grooveRampMM: GROOVE_RAMP_MM,
-    grooveFlatHalfAngleRad: GROOVE_FLAT_HALF_ANGLE_RAD,
-    grooveTransitionAngleRad: GROOVE_TRANSITION_ANGLE_RAD,
+    domeFlatTopRMM: DOME_FLAT_TOP_R_MM,
+    domeRiseMM: DOME_RISE_MM,
+    domeSlopeRunMM: DOME_SLOPE_RUN_MM,
+    domeOuterRMM: domeOuterR,
+    domeSlopeAngleDeg: domeAngleDeg,
+    holeBoltCircleRMM: boltRHoles,
     warnings,
     notes,
   };
@@ -453,17 +425,17 @@ export function formatReport(spec) {
   lines.push(`Height:                ${spec.height.toFixed(1)} mm`);
   lines.push(`Usable soil depth:     ${spec.usableDepth.toFixed(1)} mm`);
   lines.push(`Wall thickness:        ${spec.wallT.toFixed(2)} mm`);
-  lines.push(`Floor thickness:       ${spec.floorT.toFixed(2)} mm`);
   lines.push(`Draft angle:           ${spec.draftDeg.toFixed(1)} deg`);
   lines.push(`Drain holes:           ${spec.drainHoleCount} x ${spec.drainHoleDiam.toFixed(1)} mm dia`);
+  lines.push(
+    `Dome floor:            plateau r=${spec.domeFlatTopRMM.toFixed(1)}mm, rise=${spec.domeRiseMM.toFixed(1)}mm, ` +
+      `slope=${spec.domeSlopeAngleDeg.toFixed(1)} deg`
+  );
   if (spec.liftNotchCount) {
     lines.push(`Lift notches:          ${spec.liftNotchCount}`);
   }
   if (spec.airSlotsEnabled) {
     lines.push(`Air slots:             ${spec.slotCenters.length} x ${spec.slotWidthMM.toFixed(1)}mm`);
-  }
-  if (spec.groovesEnabled) {
-    lines.push(`Base grooves:          ${spec.grooveCenters.length}`);
   }
   return lines.join("\n");
 }
