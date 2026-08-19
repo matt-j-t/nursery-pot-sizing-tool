@@ -27,7 +27,6 @@
     <section class="pane-form">
       <div class="top-row">
         <span class="wordmark">mjt<span class="dot">.</span></span>
-        <span class="mono-caption">Bambu P2S · PETG</span>
       </div>
 
       <div class="title-block">
@@ -35,69 +34,52 @@
         <p class="subtitle">Measure the inside of your decorative pot. I'll shrink those numbers into a liner that fits, with room to lift it back out.</p>
       </div>
 
-      <div class="mode-tabs" role="tablist">
-        <label class="mode-tab">
-          <input type="radio" name="mode" value="direct" id="modeDirect" checked />
-          <span>Simple</span>
-        </label>
-        <label class="mode-tab">
-          <input type="radio" name="mode" value="container" id="modeContainer" />
-          <span>Full</span>
-        </label>
-      </div>
-
-      <div id="directPanel" class="mode-panel field-stack">
+      <div class="field-stack">
         <label class="field">
           <span class="field-label">Inner top diameter</span>
           <span class="input-row">
-            <input type="number" id="ttd" step="0.1" min="1" placeholder="e.g. 150" />
+            <input type="number" id="topDiam" step="0.1" min="1" placeholder="e.g. 150" />
             <span class="unit-suffix">mm</span>
           </span>
-          <span class="field-error" id="ttdError" hidden></span>
+          <span class="field-error" id="topDiamError" hidden></span>
         </label>
         <label class="field">
           <span class="field-label">Inner depth</span>
           <span class="input-row">
-            <input type="number" id="th" step="0.1" min="1" placeholder="e.g. 130" />
+            <input type="number" id="depth" step="0.1" min="1" placeholder="e.g. 130" />
             <span class="unit-suffix">mm</span>
           </span>
-          <span class="field-error" id="thError" hidden></span>
+          <span class="field-error" id="depthError" hidden></span>
         </label>
-        <p class="hint">Good enough when the pot doesn't taper much. Switch to Full if it narrows a lot near the base, or you can't easily reach in to measure the bottom.</p>
+        <label class="field">
+          <span class="field-label">Inner bottom diameter <span class="field-optional">(optional)</span></span>
+          <span class="input-row">
+            <input type="number" id="bottomDiam" step="0.1" min="1" placeholder="e.g. 110" />
+            <span class="unit-suffix">mm</span>
+          </span>
+        </label>
+        <p class="hint">Know the bottom diameter? Add it and we'll account for how much the pot tapers. Don't know it, or can't easily reach in to measure? Skip it — we'll model the liner without that taper.</p>
       </div>
 
-      <div id="containerPanel" class="mode-panel field-stack" hidden>
-        <div id="stlDrop" class="dropzone">
-          <p><strong>Optional:</strong> drop a decorative pot STL here (or click to choose a file) to auto-fill the fields below from its inner cavity.</p>
-          <input type="file" id="stlFileInput" accept=".stl" hidden />
+      <div class="feature-section">
+        <div class="field-group-inline">
+          <span class="field-label">Lift notches (rim finger grips)</span>
+          <div class="pill-radio" id="liftNotchGroup">
+            <label class="pill"><input type="radio" name="liftNotchCount" value="0" checked /><span>None</span></label>
+            <label class="pill"><input type="radio" name="liftNotchCount" value="1" /><span>1</span></label>
+            <label class="pill"><input type="radio" name="liftNotchCount" value="2" /><span>2</span></label>
+          </div>
         </div>
-        <div id="stlStatus" class="status-box" hidden></div>
 
-        <label class="field">
-          <span class="field-label">Inner top diameter</span>
-          <span class="input-row">
-            <input type="number" id="ctd" step="0.1" min="1" placeholder="e.g. 150" />
-            <span class="unit-suffix">mm</span>
-          </span>
-          <span class="field-error" id="ctdError" hidden></span>
-        </label>
-        <label class="field">
-          <span class="field-label">Inner bottom diameter</span>
-          <span class="input-row">
-            <input type="number" id="cbd" step="0.1" min="1" placeholder="e.g. 110" />
-            <span class="unit-suffix">mm</span>
-          </span>
-          <span class="field-error" id="cbdError" hidden></span>
-        </label>
-        <label class="field">
-          <span class="field-label">Inner depth</span>
-          <span class="input-row">
-            <input type="number" id="cdep" step="0.1" min="1" placeholder="e.g. 130" />
-            <span class="unit-suffix">mm</span>
-          </span>
-          <span class="field-error" id="cdepError" hidden></span>
-        </label>
-        <p class="hint">Measure (or detect) the inside of the decorative pot — not its outside — since that's the cavity the nursery pot needs to fit into.</p>
+        <div class="field-group-inline">
+          <span class="field-label">Air slots (root air-pruning)</span>
+          <label class="toggle">
+            <input type="checkbox" id="airSlotsEnabled" />
+            <span class="toggle-track"><span class="toggle-knob"></span></span>
+          </label>
+        </div>
+
+        <p class="hint">Lift notches are a fixed 20mm-wide, 6mm-deep finger recess at the rim — sized to a finger, not the pot. Air slots are fixed-width (2–4mm) vertical slots in the bottom half of the wall; the count scales with pot size.</p>
       </div>
 
       <details id="advanced" class="advanced">
@@ -137,32 +119,12 @@
               <span class="input-row"><input type="number" id="nSeg" step="1" min="24" value="96" /><span class="unit-suffix">segs</span></span>
             </label>
           </div>
-
-          <div class="field-group-inline">
-            <span class="field-label">Lift notches (rim finger grips)</span>
-            <div class="pill-radio" id="liftNotchGroup">
-              <label class="pill"><input type="radio" name="liftNotchCount" value="0" checked /><span>None</span></label>
-              <label class="pill"><input type="radio" name="liftNotchCount" value="1" /><span>1</span></label>
-              <label class="pill"><input type="radio" name="liftNotchCount" value="2" /><span>2</span></label>
-            </div>
-          </div>
-
-          <div class="field-group-inline">
-            <span class="field-label">Air slots (root air-pruning)</span>
-            <label class="toggle">
-              <input type="checkbox" id="airSlotsEnabled" />
-              <span class="toggle-track"><span class="toggle-knob"></span></span>
-            </label>
-          </div>
-
-          <p class="hint">Lift notches are a fixed 20mm-wide, 6mm-deep finger recess at the rim — sized to a finger, not the pot. Air slots are fixed-width (2–4mm) vertical slots in the bottom half of the wall; the count scales with pot size.</p>
         </div>
       </details>
 
       <div class="spacer"></div>
 
       <button id="generateBtn" class="primary-btn" disabled>Generate pot</button>
-      <span class="mono-caption footer-caption">runs in your browser — nothing uploaded</span>
     </section>
 
     <section class="pane-diagram">
@@ -204,10 +166,6 @@
     </div>
   </section>
 </main>
-
-<footer>
-  <p>Everything runs in your browser — nothing is uploaded anywhere.</p>
-</footer>
 
 <script type="module" src="js/app.js"></script>
 </body>
