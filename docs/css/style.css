@@ -116,30 +116,6 @@ main {
 }
 
 /* -------------------------------------------------------------- */
-/* Mode tabs                                                       */
-/* -------------------------------------------------------------- */
-
-.mode-tabs {
-  display: flex;
-  gap: 22px;
-  border-bottom: 1.5px solid var(--border);
-}
-.mode-tab {
-  padding: 9px 4px 11px;
-  font: 600 13px 'Poppins', sans-serif;
-  color: var(--ink-45);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1.5px;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-.mode-tab input { position: absolute; opacity: 0; width: 0; height: 0; }
-.mode-tab:has(input:checked) {
-  color: var(--espresso);
-  border-bottom-color: var(--orange);
-}
-
-/* -------------------------------------------------------------- */
 /* Fields                                                           */
 /* -------------------------------------------------------------- */
 
@@ -191,6 +167,13 @@ main {
 .field.invalid .input-row { border-color: var(--danger); }
 
 .hint { font: 400 12px/1.5 'Work Sans', sans-serif; color: var(--ink-55); margin: 0; }
+
+.field-optional {
+  font-weight: 400;
+  color: var(--ink-45);
+  text-transform: none;
+  letter-spacing: normal;
+}
 
 .field-grid {
   display: grid;
@@ -251,6 +234,21 @@ main {
 }
 .toggle input:checked + .toggle-track { background: var(--orange); }
 .toggle input:checked + .toggle-track .toggle-knob { transform: translateX(16px); }
+
+/* -------------------------------------------------------------- */
+/* Feature section (lift notches / air slots) — prominent, always  */
+/* visible, not tucked into advanced options                       */
+/* -------------------------------------------------------------- */
+
+.feature-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--dune);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
 
 /* -------------------------------------------------------------- */
 /* Advanced accordion                                               */
@@ -314,34 +312,6 @@ main {
 .secondary-btn:hover { border-color: var(--espresso); }
 
 .footer-caption { letter-spacing: 0.04em; }
-
-/* -------------------------------------------------------------- */
-/* STL dropzone / status                                            */
-/* -------------------------------------------------------------- */
-
-.dropzone {
-  border: 1.5px dashed var(--border-strong);
-  border-radius: 10px;
-  padding: 14px;
-  text-align: center;
-  cursor: pointer;
-  color: var(--ink-55);
-  font: 400 12.5px/1.5 'Work Sans', sans-serif;
-  transition: border-color 150ms ease, background 150ms ease;
-}
-.dropzone.dragover { border-color: var(--orange); background: rgba(255, 90, 31, 0.06); }
-.dropzone p { margin: 0; }
-.dropzone strong { color: var(--espresso); }
-
-.status-box {
-  background: rgba(159, 170, 143, 0.14);
-  border: 1px solid var(--sage);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 0.85rem;
-  white-space: pre-line;
-  color: var(--espresso);
-}
 
 /* -------------------------------------------------------------- */
 /* Diagram + result chip                                            */
