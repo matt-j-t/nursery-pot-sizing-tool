@@ -1,22 +1,26 @@
 // Assembles the full nursery-pot triangle list from a calculator spec.
 // Direct port of pot_builder.py.
 import * as geo from "./geometry.js";
-// mjt logo emboss — pure data + a pure point-in-polygon test, both usable
-// as supplied (unlike the other features-wip references, which needed
-// their math ported into this file's own architecture). Imported directly
-// from features-wip rather than duplicated into docs/js/.
-import { pointInLogo } from "../features-wip/logo-emboss.mjs";
+// mjt logo — vector polygon data (already exact, parsed from the source
+// SVG once), extruded directly via geo.polygonPrism rather than sampled
+// onto a heightfield grid (the earlier approach produced visibly
+// fuzzy/jagged letter edges at print resolution — see
+// docs/features-wip/pot-floor-dome.mjs).
+import { LOGO_POLYGONS } from "../features-wip/logo-data.mjs";
 
 export function buildPotMesh(spec) {
   const n = spec.nSeg;
-  const nHole = 16;
 
   const RTopOuter = spec.outerTopDiam / 2.0;
   const RBottomOuter = spec.outerBottomDiam / 2.0;
   const RInnerFloorTop = spec.innerBottomDiam / 2.0;
   const RTopInner = spec.innerTopDiam / 2.0;
   const H = spec.height;
-  const floorT = spec.floorT;
+  // The dome floor's flat outer ring — and so the wall's own floor-skin
+  // z-height where the inner wall begins — is the pot's normal wallT
+  // (see docs/nursery-pot-parametric-spec.md); floorT no longer drives
+  // any geometry here (calculator.js notes this if it differs from wallT).
+  const wallT = spec.wallT;
 
   const pieces = [];
 
@@ -74,35 +78,15 @@ export function buildPotMesh(spec) {
     return cols;
   }
 
-  // Base grooves — radial channels recessed into the floor's underside,
-  // built as their own radial x angular grid (see geo.radialGrid, ported
-  // from docs/features-wip/pot-floor.mjs) rather than warping a flat cap.
-  // One channel per drain hole, at the same angles as the drain holes
-  // below. grooveZAt is also needed up here to warp the outer wall's own
-  // bottom ring (ringBottomOuter, both branches below) so it stays
-  // seamless with the grooved floor — same "apply the same offset
-  // everywhere the two surfaces must stay seamless" pattern the lift
-  // notch already uses for its outer+inner walls.
-  const groovesOn = !!spec.groovesEnabled && (spec.grooveCenters || []).length > 0;
-  const grooveOpts = {
-    gapMM: spec.grooveGapMM,
-    rampMM: spec.grooveRampMM,
-    flatHalfAngle: spec.grooveFlatHalfAngleRad,
-    transitionAngle: spec.grooveTransitionAngleRad,
-  };
-  const grooveZAt = (r, theta) => geo.grooveOffsetAt(r, theta, spec.grooveCenters, spec.hubRadiusMM, grooveOpts);
-  const warpRingZ = (ring) =>
-    groovesOn ? ring.map(([x, y, z]) => [x, y, z + grooveZAt(Math.hypot(x, y), Math.atan2(y, x))]) : ring;
-
   let ringBottomOuter, ringTopOuter, ringBottomInner, ringTopInner;
 
   if (hasNotch || hasSlots) {
-    // floorT..H is shared, ring-for-ring, between the outer and inner
+    // wallT..H is shared, ring-for-ring, between the outer and inner
     // grids — required so the generic stitcher can connect a hole's
     // outer-surface boundary loop directly to the matching inner-surface
     // vertices by (ring, column) index, with no spatial search needed.
     const sharedZs = geo.mergeZLevels(
-      geo.notchZLevels(floorT, H, notchOpts.fadeSpanMM),
+      geo.notchZLevels(wallT, H, notchOpts.fadeSpanMM),
       hasSlots ? geo.slotZLevels(slotZLo, slotZHi, spec.slotNRings) : []
     );
     const outerRadiusFn = (z, theta) => {
@@ -110,7 +94,7 @@ export function buildPotMesh(spec) {
       return base + geo.notchOffsetAt(theta, z, notchCenters, RTopOuter, H, notchOpts);
     };
     const innerRadiusFn = (z, theta) => {
-      const base = RInnerFloorTop + (RTopInner - RInnerFloorTop) * ((z - floorT) / (H - floorT));
+      const base = RInnerFloorTop + (RTopInner - RInnerFloorTop) * ((z - wallT) / (H - wallT));
       return base + geo.notchOffsetAt(theta, z, notchCenters, RTopOuter, H, notchOpts);
     };
 
@@ -124,14 +108,16 @@ export function buildPotMesh(spec) {
     // capped separately below, not holes.
     pieces.push(...geo.stitchWallGridHoles(outerGrid, innerGrid));
 
-    // Outer wall below floorT (floor skin, unaffected by notch/slots —
+    // Outer wall below wallT (floor skin, unaffected by notch/slots —
     // both are validated in calculator.js to stay above this z) as a
     // plain, un-notched taper, joined seamlessly to the grid above since
-    // both use the identical base-taper formula at z=floorT.
-    const radiusAtFloorT = RBottomOuter + (RTopOuter - RBottomOuter) * (floorT / H);
-    ringBottomOuter = warpRingZ(geo.ring3(RBottomOuter, 0.0, n));
-    const ringFloorTOuter = geo.ring3(radiusAtFloorT, floorT, n);
-    pieces.push(...geo.quadStrip(ringBottomOuter, ringFloorTOuter, true));
+    // both use the identical base-taper formula at z=wallT. The dome
+    // itself never reaches this radius (RBottomOuter is always outboard
+    // of domeOuterR — see calculator.js), so this ring needs no warp.
+    const radiusAtWallT = RBottomOuter + (RTopOuter - RBottomOuter) * (wallT / H);
+    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
+    const ringWallTOuter = geo.ring3(radiusAtWallT, wallT, n);
+    pieces.push(...geo.quadStrip(ringBottomOuter, ringWallTOuter, true));
 
     ringTopOuter = outerGrid.rings[outerGrid.rings.length - 1];
     ringBottomInner = innerGrid.rings[0];
@@ -142,12 +128,12 @@ export function buildPotMesh(spec) {
     pieces.push(...geo.annulusCapFromRings(ringTopOuter, ringTopInner, true));
   } else {
     // 1) Outer wall, full height (continuous taper, covers floor skin + cavity wall)
-    ringBottomOuter = warpRingZ(geo.ring3(RBottomOuter, 0.0, n));
+    ringBottomOuter = geo.ring3(RBottomOuter, 0.0, n);
     ringTopOuter = geo.ring3(RTopOuter, H, n);
     pieces.push(...geo.quadStrip(ringBottomOuter, ringTopOuter, true));
 
-    // 2) Inner wall, floorT..H
-    ringBottomInner = geo.ring3(RInnerFloorTop, floorT, n);
+    // 2) Inner wall, wallT..H
+    ringBottomInner = geo.ring3(RInnerFloorTop, wallT, n);
     ringTopInner = geo.ring3(RTopInner, H, n);
     pieces.push(...geo.quadStrip(ringBottomInner, ringTopInner, false));
 
@@ -155,177 +141,136 @@ export function buildPotMesh(spec) {
     pieces.push(...geo.annulusCap(RTopOuter, RTopInner, H, n, true));
   }
 
-  // 4) Drainage holes
+  // 4) Drainage holes — round through-holes in the dome's flat outer
+  // ring, well outboard of the slope (see calculator.js's minBoltR check).
   const nHoles = spec.drainHoleCount;
   const holeCenters = [];
   let holeR = spec.drainHoleDiam / 2.0;
   if (nHoles > 0) {
-    const boltR = spec.drainHoleBoltCircleDiam / 2.0;
+    const boltR = spec.holeBoltCircleRMM;
     for (let i = 0; i < nHoles; i++) {
       const a = (2 * Math.PI * i) / nHoles;
       holeCenters.push([boltR * Math.cos(a), boltR * Math.sin(a)]);
     }
   }
 
-  if (groovesOn) {
-    // Floor built as its own radial x angular grid (ported from
-    // docs/features-wip/pot-floor.mjs) instead of warping a flat
-    // ear-clip-triangulated cap — see the comment above geo.radialGrid
-    // for why the flat-cap approach produced chaotic fan triangulation.
-    const hubR = spec.hubRadiusMM;
-    const rampMM = spec.grooveRampMM;
+  // 5) Dome floor — see docs/nursery-pot-parametric-spec.md and
+  // docs/features-wip/pot-floor-dome.mjs. A single continuous,
+  // theta-independent (radially symmetric) surface: flat plateau, a
+  // straight conical slope, then a flat outer ring — self-supporting by
+  // construction (every new printed layer sits on solid material below
+  // it, starting from the outer ring's full bed contact).
+  const flatTopR = spec.domeFlatTopRMM;
+  const domeRise = spec.domeRiseMM;
+  const slopeRun = spec.domeSlopeRunMM;
+  const domeOuterR = spec.domeOuterRMM;
 
-    // A grid cell (ring at radius r, column k) is "open" if that cell's
-    // actual (x,y) position falls within a drain hole's radius — a direct
-    // 2D circle test on the grid (holes are localized in both r and
-    // theta, unlike the air slots' full-band angular test).
-    function holeOpenColumnsAtR(r) {
-      const cols = new Set();
-      for (let k = 0; k < n; k++) {
-        const theta = (2 * Math.PI * k) / n;
-        const x = r * Math.cos(theta), y = r * Math.sin(theta);
-        for (const [hx, hy] of holeCenters) {
-          if (Math.hypot(x - hx, y - hy) < holeR) {
-            cols.add(k);
-            break;
-          }
+  // Exterior z(r) is geo.domeHeight directly. Interior z(r) is the TRUE
+  // per-facet wallT normal-offset of the plateau+slope portion (see
+  // geo.offsetProfileInward — this is what keeps wall thickness genuinely
+  // constant through the slope, not a naive vertical shift), then the
+  // flat outer ring continues out to RInnerFloorTop at that offset's own
+  // height — exactly how the floor already met the inner wall before the
+  // dome existed.
+  // The 4th point (domeOuterR+1, 0) is a dummy — just far enough along
+  // the flat outer line to give the domeOuterR corner a real neighboring
+  // segment to miter against. Without it, offsetProfileInward would treat
+  // that corner as an open ENDPOINT (using only the slope's own normal,
+  // not the true mitered corner), which silently undershoots wallT there.
+  const intDomeOnly = geo.offsetProfileInward(
+    [[0, domeRise], [flatTopR, domeRise], [domeOuterR, 0], [domeOuterR + 1, 0]],
+    wallT
+  );
+  const flatTopRInt = intDomeOnly[1][0];
+  const intFlatZ = intDomeOnly[1][1]; // domeRise + wallT
+  const domeOuterRInt = intDomeOnly[2][0];
+  const intOuterZ = intDomeOnly[2][1]; // wallT
+  const intSlopeSlope = (intOuterZ - intFlatZ) / (domeOuterRInt - flatTopRInt);
+
+  function extFloorZ(r) {
+    return geo.domeHeight(r, flatTopR, domeRise, slopeRun);
+  }
+  function intFloorZ(r) {
+    if (r <= flatTopRInt) return intFlatZ;
+    if (r <= domeOuterRInt) return intFlatZ + intSlopeSlope * (r - flatTopRInt);
+    return intOuterZ;
+  }
+
+  // A grid cell (ring at radius r, column k) is "open" if that cell's
+  // actual (x,y) position falls within a drain hole's radius — same
+  // technique used for air slots above, just a direct 2D circle test
+  // since holes are localized in both r and theta.
+  function holeOpenColumnsAtR(r) {
+    const cols = new Set();
+    for (let k = 0; k < n; k++) {
+      const theta = (2 * Math.PI * k) / n;
+      const x = r * Math.cos(theta), y = r * Math.sin(theta);
+      for (const [hx, hy] of holeCenters) {
+        if (Math.hypot(x - hx, y - hy) < holeR) {
+          cols.add(k);
+          break;
         }
       }
-      return cols;
     }
+    return cols;
+  }
 
-    // r-levels: hub, end of ramp, and RInnerFloorTop (where the top
-    // surface stops — matching where the original flat floor-top cap
-    // ended and the inner wall begins), plus extra rings bracketing each
-    // drain hole's radial footprint so the hole has actual ring-to-ring
-    // steps to be cut out of.
-    //
-    // A ring EXACTLY at rc +/- holeR only touches the hole's circle at a
-    // single point (distance == holeR there, not < holeR), so it always
-    // computes an EMPTY open-column set — placing the brackets there (or
-    // further out) means no ring ever has an open column and the hole
-    // never gets cut at all. The brackets need to sit just outside the
-    // circle (kept fully closed, for a clean edge) AND there need to be
-    // interior rings strictly inside it (rc +/- up to ~0.9*holeR) so the
-    // open-column test actually finds a nonzero opening at several
-    // consecutive rings, tapering the cut in toward rc like facets on a
-    // polygon approximating a circle.
-    const holeBracketLevels = [];
-    const nHoleRings = 5;
-    for (const [hx, hy] of holeCenters) {
-      const rc = Math.hypot(hx, hy);
-      holeBracketLevels.push(Math.max(hubR, rc - holeR * 1.15), rc + holeR * 1.15);
-      for (let i = 0; i <= nHoleRings; i++) {
-        const r = rc - holeR * 0.9 + (holeR * 1.8) * (i / nHoleRings);
-        holeBracketLevels.push(Math.max(hubR, r));
-      }
+  // r-levels bracketing each drain hole's radial footprint, shared by
+  // both surfaces (a straight vertical hole has the same x,y footprint
+  // top to bottom). A ring EXACTLY at rc +/- holeR only touches the
+  // hole's circle at a single point (distance == holeR, not < holeR), so
+  // it always computes an EMPTY open-column set — the brackets sit just
+  // outside the circle (kept fully closed) with interior rings strictly
+  // inside it (rc +/- up to ~0.9*holeR) so the cut actually tapers in
+  // toward rc across several rings, like facets on a polygon
+  // approximating a circle.
+  const holeBracketLevels = [];
+  const nHoleRings = 5;
+  for (const [hx, hy] of holeCenters) {
+    const rc = Math.hypot(hx, hy);
+    holeBracketLevels.push(rc - holeR * 1.15, rc + holeR * 1.15);
+    for (let i = 0; i <= nHoleRings; i++) {
+      holeBracketLevels.push(rc - holeR * 0.9 + holeR * 1.8 * (i / nHoleRings));
     }
-    const rLevelsShared = geo
-      .mergeZLevels([hubR, hubR + rampMM, RInnerFloorTop], holeBracketLevels)
-      .filter((r) => r <= RInnerFloorTop + 1e-6);
-    const rLevelsOuter = geo.mergeZLevels(rLevelsShared, [RBottomOuter]);
+  }
+  const rLevelsExt = geo
+    .mergeZLevels([flatTopR, domeOuterR, RBottomOuter], holeBracketLevels)
+    .filter((r) => r >= flatTopR - 1e-6 && r <= RBottomOuter + 1e-6);
+  const rLevelsInt = geo
+    .mergeZLevels([flatTopRInt, domeOuterRInt, RInnerFloorTop], holeBracketLevels)
+    .filter((r) => r >= flatTopRInt - 1e-6 && r <= RInnerFloorTop + 1e-6);
 
-    const outerFloorGrid = geo.radialGrid(grooveZAt, rLevelsOuter, n, holeOpenColumnsAtR);
-    const innerFloorGrid = geo.radialGrid(() => floorT, rLevelsShared, n, holeOpenColumnsAtR);
+  const extFloorGrid = geo.radialGrid(extFloorZ, rLevelsExt, n, holeOpenColumnsAtR);
+  const intFloorGrid = geo.radialGrid(intFloorZ, rLevelsInt, n, holeOpenColumnsAtR);
 
-    pieces.push(...geo.wallGridFaces(outerFloorGrid, false));
-    pieces.push(...geo.wallGridFaces(innerFloorGrid, true));
-    // Seals every drain hole loop found inside this grid (the grid's own
-    // inner/outer edge rings — hub and RBottomOuter/RInnerFloorTop — are
-    // excluded automatically, same as the wall's slot stitching above).
-    pieces.push(...geo.stitchWallGridHoles(outerFloorGrid, innerFloorGrid));
+  pieces.push(...geo.wallGridFaces(extFloorGrid, false));
+  pieces.push(...geo.wallGridFaces(intFloorGrid, true));
+  // Seals every drain hole loop found inside this grid (the grid's own
+  // inner/outer edge rings — the plateau boundary and RBottomOuter /
+  // RInnerFloorTop — are excluded automatically, same as the wall's slot
+  // stitching above).
+  pieces.push(...geo.stitchWallGridHoles(extFloorGrid, intFloorGrid));
 
-    // Hub underside — unaffected by the logo emboss below (that's an
-    // interior/soil-facing detail only); stays the single legitimate flat
-    // fan (see pot-floor.mjs comment) flush with the bed.
-    pieces.push(...geo.flatDiscFan(hubR, 0.0, n, 0, 0, false));
+  // Plateau caps — flat NGON caps (earClip across their own boundary,
+  // never a single-point fan — a banned construction everywhere in this
+  // spec, not just here) sharing vertices exactly with the ring-lofts
+  // above (both built from circleXY(radius, n) at the same theta
+  // sampling, so there's no seam).
+  pieces.push(...geo.ngonCap(flatTopR, domeRise, n, false));
+  pieces.push(...geo.ngonCap(flatTopRInt, intFlatZ, n, true));
 
-    // Hub top (soil-facing) — carries the small mjt logo emboss, so unlike
-    // the underside it can't be a plain fan: a fan has no interior
-    // vertices between its single center point and the outer ring, so
-    // there'd be nothing for a compact interior bump to sit on (the exact
-    // ear-clipping problem the grooved floor itself was rewritten to
-    // avoid — see the comment above geo.radialGrid). Give it a real
-    // radial grid instead, flat at floorT everywhere except where
-    // pointInLogo() says a point falls inside the logo, where it's raised
-    // by LOGO_EMBOSS_HEIGHT_MM.
-    //
-    // The logo is NOT safely clear of the hub center — checked directly
-    // against the polygon data: pointInLogo(0,0) is true, and the nearest
-    // logo boundary crossing to the origin is ~0.01mm away, so a plain
-    // flat "true fan" at any radius that matters would clip part of a
-    // letter stroke. The true center point still has to be a fan (there's
-    // no way to avoid one legitimate fan point at r=0 — see pot-floor.mjs
-    // comment), but it evaluates hubTopZ at the center too instead of
-    // assuming it's flat, down to a fan radius small enough (0.1mm, under
-    // the 0.4mm nozzle's resolution either way) that any imprecision
-    // right at the very center is unprintable regardless.
-    const LOGO_WIDTH_MM = 12.0;
-    const LOGO_HEIGHT_MM = LOGO_WIDTH_MM * 0.42; // matches logo-emboss.mjs's own aspect assumption
-    const LOGO_EMBOSS_HEIGHT_MM = 0.5;
-    const LOGO_HUB_FAN_R_MM = 0.1;
-    const logoHalfW = LOGO_WIDTH_MM / 2, logoHalfH = LOGO_HEIGHT_MM / 2;
-
-    function hubTopZ(r, theta) {
-      const x = r * Math.cos(theta), y = r * Math.sin(theta);
-      // Cheap bounding-box gate before the (still cheap, but not free)
-      // point-in-polygon test — most of the hub disc is nowhere near the
-      // logo's 12mm x 5mm footprint.
-      if (Math.abs(x) <= logoHalfW && Math.abs(y) <= logoHalfH && pointInLogo(x / 1000, y / 1000)) {
-        return floorT + LOGO_EMBOSS_HEIGHT_MM;
-      }
-      return floorT;
-    }
-
-    function logoAwareCenterFan(radius, nCols, zFn) {
-      const ring = [];
-      for (let k = 0; k < nCols; k++) {
-        const theta = (2 * Math.PI * k) / nCols;
-        ring.push([radius * Math.cos(theta), radius * Math.sin(theta), zFn(radius, theta)]);
-      }
-      const center = [0, 0, zFn(0, 0)];
-      const tris = [];
-      for (let k = 0; k < nCols; k++) {
-        const j = (k + 1) % nCols;
-        tris.push([center, ring[k], ring[j]]); // matches flatDiscFan's facingUp=true winding
-      }
-      return tris;
-    }
-
-    if (LOGO_HUB_FAN_R_MM < hubR) {
-      const nHubRings = 48; // fine enough that the logo's ~12mm footprint gets real resolution, not just a couple of rings
-      const hubRLevels = Array.from(
-        { length: nHubRings },
-        (_, i) => LOGO_HUB_FAN_R_MM + (hubR - LOGO_HUB_FAN_R_MM) * (i / (nHubRings - 1))
-      );
-      const hubTopGrid = geo.radialGrid(hubTopZ, hubRLevels, n);
-      pieces.push(...geo.wallGridFaces(hubTopGrid, true));
-      pieces.push(...logoAwareCenterFan(LOGO_HUB_FAN_R_MM, n, hubTopZ));
-    } else {
-      // Degenerate (only possible with an unusually tiny hub radius) —
-      // fall back to a single logo-aware fan rather than build a grid
-      // with no rings in it.
-      pieces.push(...logoAwareCenterFan(hubR, n, hubTopZ));
-    }
-  } else {
-    // 5) Bottom cap
-    if (nHoles > 0) {
-      pieces.push(...geo.discWithHoles3D(RBottomOuter, holeCenters, holeR, 0.0, n, nHole, false));
-    } else {
-      pieces.push(...geo.flatDiscFan(RBottomOuter, 0.0, n, 0, 0, false));
-    }
-
-    // 6) Floor-top cap
-    if (nHoles > 0) {
-      pieces.push(...geo.discWithHoles3D(RInnerFloorTop, holeCenters, holeR, floorT, n, nHole, true));
-    } else {
-      pieces.push(...geo.flatDiscFan(RInnerFloorTop, floorT, n, 0, 0, true));
-    }
-
-    // 7) Hole tunnel walls
-    if (nHoles > 0) {
-      pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0.0, floorT, nHole));
-    }
+  // 6) mjt logo — extruded directly from its exact vector polygon data
+  // (geo.polygonPrism), resting on the interior plateau (r<=flatTopRInt,
+  // comfortably larger than the logo's ~12x5mm footprint at any
+  // reasonable pot size). Each polygon (m, j, t, the j's dot) becomes its
+  // own small independent solid — no boolean/CSG union needed, since two
+  // solids sharing a flat contact plane already print correctly, and
+  // each stays its own fully closed, individually watertight mesh rather
+  // than trying to weld into the plateau cap's own triangulation.
+  const LOGO_EMBOSS_HEIGHT_MM = 0.5;
+  for (const poly of LOGO_POLYGONS) {
+    const polyMM = poly.map(([x, y]) => [x * 1000, y * 1000]);
+    pieces.push(...geo.polygonPrism(polyMM, intFlatZ, LOGO_EMBOSS_HEIGHT_MM));
   }
 
   // No feet: the pot sits flat on its own floor (z=0) for reliable
