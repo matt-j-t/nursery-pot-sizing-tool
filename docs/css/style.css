@@ -322,8 +322,33 @@ main {
   border-radius: 16px;
   box-shadow: var(--shadow-sm);
   padding: 20px 24px 12px;
+  position: relative;
 }
-#diagramSvgWrap svg { display: block; }
+
+#viewer3d {
+  width: 280px;
+  height: 300px;
+  max-width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dune);
+}
+#viewer3d canvas { display: block; width: 100%; height: 100%; }
+
+.viewer-placeholder {
+  position: absolute;
+  inset: 20px 24px 12px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 400 11px 'Courier New', monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink-45);
+  background: var(--dune);
+  border-radius: 10px;
+  pointer-events: none;
+}
 
 .result-chip {
   width: 100%;
@@ -386,26 +411,7 @@ main {
 .notes-box strong, .warnings-box strong { font-family: 'Poppins', sans-serif; font-size: 0.85rem; }
 .notes-box ul, .warnings-box ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
 
-.viewer-row {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 1rem;
-  margin-top: 1.25rem;
-}
-@media (max-width: 640px) {
-  .viewer-row { grid-template-columns: 1fr; }
-}
-
-#viewer3d {
-  height: 340px;
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--dune);
-  border: 1px solid var(--border);
-}
-#viewer3d canvas { display: block; width: 100%; height: 100%; }
-
-#arColumn { display: flex; flex-direction: column; gap: 0.75rem; }
+#arColumn { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.25rem; }
 
 #qrBox {
   background: #fff;

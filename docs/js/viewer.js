@@ -57,6 +57,15 @@ export class PotViewer {
     this.renderer.render(this.scene, this.camera);
   }
 
+  clear() {
+    if (this.mesh) {
+      this.scene.remove(this.mesh);
+      if (this._lastGeometry) this._lastGeometry.dispose();
+      this.mesh = null;
+      this._lastGeometry = null;
+    }
+  }
+
   updateMesh(triangles) {
     if (this.mesh) {
       this.scene.remove(this.mesh);

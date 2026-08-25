@@ -2,7 +2,6 @@ import * as calc from "./calculator.js";
 import { buildPotMesh } from "./potBuilder.js";
 import { writeBinarySTL, meshStats } from "./stlIO.js";
 import { PotViewer } from "./viewer.js";
-import { renderDiagram } from "./diagram.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,7 +23,7 @@ const els = {
   qrCanvas: $("qrCanvas"),
   downloadStlBtn: $("downloadStlBtn"),
   copyLinkBtn: $("copyLinkBtn"),
-  diagramSvgWrap: $("diagramSvgWrap"),
+  viewerPlaceholder: $("viewerPlaceholder"),
   resultChip: $("resultChip"),
   resultChipText: $("resultChipText"),
   chipStlLink: $("chipStlLink"),
@@ -83,7 +82,7 @@ function readFields() {
 }
 
 // ---------------------------------------------------------------------
-// Live diagram + generate-button validity
+// Live 3D preview + generate-button validity
 // ---------------------------------------------------------------------
 
 function tryResolveSpec() {
@@ -102,25 +101,21 @@ function tryResolveSpec() {
   }
 }
 
-function updateDiagram() {
-  const { topDiam, depth, bottomDiam } = readFields();
-  const outer = { topDiam, bottomDiam, depth };
-
+function updatePreview() {
   const spec = tryResolveSpec();
-  const inner = spec ? { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height } : null;
-
-  renderDiagram(els.diagramSvgWrap, {
-    outer,
-    inner,
-    holeCount: spec ? spec.drainHoleCount : 0,
-    showBottomRuler: true,
-  });
+  if (!spec) {
+    viewer.clear();
+    els.viewerPlaceholder.hidden = false;
+    return;
+  }
+  els.viewerPlaceholder.hidden = true;
+  viewer.updateMesh(buildPotMesh(spec));
 }
 
-let diagramTimer = null;
-function scheduleDiagramUpdate() {
-  clearTimeout(diagramTimer);
-  diagramTimer = setTimeout(updateDiagram, 200);
+let previewTimer = null;
+function schedulePreviewUpdate() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(updatePreview, 200);
 }
 
 function updateGenerateEnabled() {
@@ -128,11 +123,11 @@ function updateGenerateEnabled() {
 }
 
 els.inputSection.addEventListener("input", () => {
-  scheduleDiagramUpdate();
+  schedulePreviewUpdate();
   updateGenerateEnabled();
 });
 els.inputSection.addEventListener("change", () => {
-  scheduleDiagramUpdate();
+  schedulePreviewUpdate();
   updateGenerateEnabled();
 });
 
@@ -198,13 +193,6 @@ async function generate(updateUrl) {
   els.resultChip.hidden = false;
   els.resultChipText.textContent =
     `Liner: Ø${spec.outerTopDiam.toFixed(0)} top · Ø${spec.outerBottomDiam.toFixed(0)} bottom · ${spec.height.toFixed(0)}mm`;
-
-  renderDiagram(els.diagramSvgWrap, {
-    outer: { topDiam, bottomDiam, depth },
-    inner: { topDiam: spec.outerTopDiam, bottomDiam: spec.outerBottomDiam, depth: spec.height },
-    holeCount: spec.drainHoleCount,
-    showBottomRuler: true,
-  });
 
   // AR exports (GLB + USDZ) — don't block the visible report/preview on these
   setupAR(triangles).catch((err) => console.warn("AR export failed:", err));
@@ -325,11 +313,11 @@ function applyStateFromURL() {
   return true;
 }
 
-updateDiagram();
+updatePreview();
 updateGenerateEnabled();
 
 if (applyStateFromURL()) {
-  updateDiagram();
+  updatePreview();
   updateGenerateEnabled();
   generate(false).then(renderShareTarget);
 }

@@ -129,7 +129,8 @@
 
     <section class="pane-diagram">
       <div class="diagram-card">
-        <div id="diagramSvgWrap"></div>
+        <div id="viewer3d"></div>
+        <p class="viewer-placeholder" id="viewerPlaceholder">enter measurements to preview</p>
       </div>
       <div class="result-chip" id="resultChip" hidden>
         <span class="chip-dot"></span>
@@ -146,17 +147,14 @@
     <div id="notesBox" class="notes-box" hidden></div>
     <div id="warningsBox" class="warnings-box" hidden></div>
 
-    <div class="viewer-row">
-      <div id="viewer3d"></div>
-      <div id="arColumn">
-        <model-viewer id="modelViewer" ar ar-modes="scene-viewer quick-look webxr"
-          camera-controls interaction-prompt="none" style="width:100%;height:260px;display:none;">
-          <button slot="ar-button" id="arButton" class="primary-btn ar-btn">View in your space (AR)</button>
-        </model-viewer>
-        <div id="qrBox">
-          <p class="hint">Scan with your phone to open this pot and view it in AR:</p>
-          <div id="qrCanvas"></div>
-        </div>
+    <div id="arColumn">
+      <model-viewer id="modelViewer" ar ar-modes="scene-viewer quick-look webxr"
+        camera-controls interaction-prompt="none" style="width:100%;height:260px;display:none;">
+        <button slot="ar-button" id="arButton" class="primary-btn ar-btn">View in your space (AR)</button>
+      </model-viewer>
+      <div id="qrBox">
+        <p class="hint">Scan with your phone to open this pot and view it in AR:</p>
+        <div id="qrCanvas"></div>
       </div>
     </div>
 
