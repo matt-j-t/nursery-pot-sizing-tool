@@ -7,7 +7,9 @@ const LEAF_PATH = "M7 19C2 14 1 6 7 0c6 6 5 14 0 19Z";
 
 // Longest-running child animation: the petal-center dot starts at 760ms
 // and runs 400ms — .is-blooming must stay on the button at least that long.
-const BLOOM_DURATION_MS = 1200;
+// Exported so callers (e.g. app.js) can delay anything that would move the
+// button out of view — like scrolling to results — until it's finished.
+export const BLOOM_DURATION_MS = 1200;
 
 function makeLeaf({ x, angle, delay, alt }) {
   const el = document.createElement("span");

@@ -2,7 +2,7 @@ import * as calc from "./calculator.js";
 import { buildPotMesh } from "./potBuilder.js";
 import { writeBinarySTL, meshStats } from "./stlIO.js";
 import { PotViewer } from "./viewer.js";
-import { initBloomButton } from "./bloomButton.js";
+import { initBloomButton, BLOOM_DURATION_MS } from "./bloomButton.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -137,12 +137,12 @@ els.inputSection.addEventListener("change", () => {
 // Generate
 // ---------------------------------------------------------------------
 
-initBloomButton(els.generateBtn, () => generate(true), { statusEl: els.genStatus });
+initBloomButton(els.generateBtn, () => generate(true, { scrollDelayMs: BLOOM_DURATION_MS }), { statusEl: els.genStatus });
 els.downloadStlBtn.addEventListener("click", downloadStl);
 els.chipStlLink.addEventListener("click", downloadStl);
 els.copyLinkBtn.addEventListener("click", copyLink);
 
-async function generate(updateUrl) {
+async function generate(updateUrl, { scrollDelayMs = 0 } = {}) {
   const { topDiam, depth, bottomDiam } = readFields();
   const advanced = readAdvanced();
   if (!Number.isFinite(topDiam) || !Number.isFinite(depth)) {
@@ -205,7 +205,9 @@ async function generate(updateUrl) {
     renderShareTarget();
   }
 
-  els.resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollToResults = () => els.resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (scrollDelayMs > 0) setTimeout(scrollToResults, scrollDelayMs);
+  else scrollToResults();
 }
 
 async function setupAR(triangles) {
