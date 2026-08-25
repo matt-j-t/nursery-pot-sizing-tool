@@ -1,171 +1,111 @@
 /*
-  Bloom button — click-to-generate micro-interaction for the Generate
-  button: a seed icon sprouts, small leaves and soil dust drift up from
-  the top edge, and a single pale bloom opens at the climax.
+  Sprout Button — simplified click/hover micro-interaction
+  Structure ported from the Uiverse.io "twinkle button" pattern: a handful
+  of small icons absolutely positioned over the button, hidden behind it,
+  that fly outward via a single CSS transition when the button is active.
+  No keyframes, no JS-built markup — just position + rotation + filter.
 
-  Fill is Signal Orange, matching the site's other primary buttons
-  (Download STL etc. — see .primary-btn in style.css); the bloom's
-  climax color is the cream highlight instead of orange so it still
-  reads against an orange button. Colors are wired to the site's own
-  custom properties (--orange, --sage, --espresso, --dune from
-  style.css); --bb-leaf-alt has no site equivalent and keeps its own
-  literal shade.
+  Colors are wired to the site's own custom properties (--orange, --sage,
+  --espresso from style.css) so the button always matches the palette.
+
+  Ten leaves in two hand-drawn shapes (a rounder one, a pointier one)
+  alternate around the button, each at its own size and rotation — several
+  mirrored — and fly out toward all points of the compass, so it reads as
+  a fuller scatter of foliage rather than a sparse ring of one icon.
 */
 
 :root{
-  --bb-fill: var(--orange);
-  --bb-fill-hover: var(--orange-hover);
-  --bb-leaf: var(--sage);
-  --bb-leaf-alt: #7E9179;
-  --bb-bloom: var(--dune);
-  --bb-bloom-center: var(--espresso);
-  --bb-dust: var(--espresso);
-  --bb-label: var(--dune);
-  --bb-focus: var(--bb-fill);
+  --bb-orange: var(--orange);
+  --bb-orange-glow: rgba(255, 90, 31, 0.45);
+  --bb-espresso: var(--espresso);
+  --bb-sage: var(--sage);
+  --bb-sage-dark: color-mix(in srgb, var(--sage) 68%, var(--espresso));
+  --bb-sage-vein: color-mix(in srgb, var(--sage) 55%, var(--espresso));
 }
 
 .bloom-btn{
   position: relative;
-  appearance: none;
-  border: none;
-  cursor: pointer;
-  background: var(--bb-fill);
-  color: var(--bb-label);
-  font-family: 'Poppins', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
   padding: 13px 28px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.12), 0 10px 24px -14px rgba(59, 42, 32, 0.55);
-  transition: transform 120ms ease, box-shadow 200ms ease, background 200ms ease, opacity 120ms ease;
+  background: var(--bb-orange);
+  border: 2px solid var(--bb-orange);
+  border-radius: 10px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--bb-espresso);
+  box-shadow: 0 0 0 rgba(255, 90, 31, 0);
+  cursor: pointer;
+  transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, opacity 120ms ease;
 }
-.bloom-btn:hover:not(:disabled){ background: var(--bb-fill-hover); }
-.bloom-btn:active:not(:disabled){ transform: scale(0.965); }
 .bloom-btn:focus-visible{
-  outline: 2px solid var(--bb-focus);
+  outline: 2px solid var(--bb-espresso);
   outline-offset: 3px;
 }
 .bloom-btn:disabled{ opacity: 0.5; cursor: not-allowed; }
 
-.bloom-btn__icon{
-  position: relative;
-  width: 18px;
-  height: 18px;
-  flex: none;
-}
-.bloom-btn__icon svg{
+/* ten leaves, hidden behind the button until active */
+.bloom-btn .leaf{
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.icon-seed{ opacity: 1; transform: scale(1) rotate(0deg); transition: opacity 260ms ease, transform 260ms ease; }
-.icon-sprout{ opacity: 0; transform: scale(0.6) rotate(-8deg); transition: opacity 260ms ease, transform 260ms ease; }
-.bloom-btn.is-blooming .icon-seed{ opacity: 0; transform: scale(0.6) rotate(8deg); }
-.bloom-btn.is-blooming .icon-sprout{ opacity: 1; transform: scale(1) rotate(0deg); }
-
-/* expanding pulse ring */
-.bloom-btn__ring{
-  position: absolute;
-  inset: -4px;
-  border-radius: 999px;
+  width: 14px;
+  height: auto;
+  opacity: 0;
+  z-index: -1;
   pointer-events: none;
-  border: 1.5px solid var(--bb-leaf);
-  opacity: 0;
+  filter: drop-shadow(0 0 0 var(--bb-sage));
+  transition: top 0.9s cubic-bezier(0.05, 0.83, 0.43, 0.96),
+              left 0.9s cubic-bezier(0.05, 0.83, 0.43, 0.96),
+              transform 0.9s cubic-bezier(0.05, 0.83, 0.43, 0.96),
+              opacity 0.9s cubic-bezier(0.05, 0.83, 0.43, 0.96),
+              filter 0.9s cubic-bezier(0.05, 0.83, 0.43, 0.96);
 }
-.bloom-btn.is-blooming .bloom-btn__ring{
-  animation: bb-ringPulse 900ms cubic-bezier(.2,.7,.3,1);
-}
-@keyframes bb-ringPulse{
-  0%   { opacity: .6; transform: scale(1); }
-  100% { opacity: 0;   transform: scale(1.55); }
-}
+.bloom-btn .leaf-fill{ fill: var(--bb-sage); }
+.bloom-btn .leaf--dark .leaf-fill{ fill: var(--bb-sage-dark); }
+.bloom-btn .leaf-vein{ stroke: var(--bb-sage-vein); stroke-width: 0.6; fill: none; stroke-linecap: round; }
 
-/* fx layer: leaves + soil dust + a single bloom, anchored to the top edge */
-.bloom-btn__fx{
-  position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 0;
-  pointer-events: none;
-}
+/* resting position, size (50% larger than the first pass), and a distinct
+   rotation per leaf (several mirrored) so they don't all point the same way */
+.bloom-btn .leaf-1{  top: 15%; left: 8%;  width: 24px; transform: rotate(-15deg); }
+.bloom-btn .leaf-2{  top: 55%; left: 22%; width: 15px; transform: rotate(25deg) scaleX(-1); }
+.bloom-btn .leaf-3{  top: 62%; left: 42%; width: 12px; transform: rotate(-60deg); }
+.bloom-btn .leaf-4{  top: 18%; left: 38%; width: 18px; transform: rotate(10deg); }
+.bloom-btn .leaf-5{  top: 28%; left: 58%; width: 22px; transform: rotate(-30deg) scaleX(-1); }
+.bloom-btn .leaf-6{  top: 58%; left: 72%; width: 14px; transform: rotate(50deg); }
+.bloom-btn .leaf-7{  top: 10%; left: 62%; width: 26px; transform: rotate(-100deg) scaleX(-1); }
+.bloom-btn .leaf-8{  top: 65%; left: 15%; width: 17px; transform: rotate(75deg); }
+.bloom-btn .leaf-9{  top: 35%; left: 88%; width: 20px; transform: rotate(-140deg); }
+.bloom-btn .leaf-10{ top: 45%; left: 5%;  width: 13px; transform: rotate(100deg) scaleX(-1); }
 
-.bloom-btn .leaf, .bloom-btn .dust, .bloom-btn .petal-cluster{
-  position: absolute;
-  top: 0;
-  left: var(--x, 50%);
-  transform-origin: 50% 100%;
-  opacity: 0;
+/* :hover covers desktop mouse users for free; .is-active is added by
+   bloomButton.js on click, so touch/keyboard activation gets the same
+   flourish even without a sustained hover. :not(:disabled) keeps a
+   disabled button visually inert. */
+.bloom-btn:hover:not(:disabled),
+.bloom-btn.is-active:not(:disabled){
+  background: transparent;
+  color: var(--bb-orange);
+  box-shadow: 0 0 22px var(--bb-orange-glow);
 }
-
-.bloom-btn .leaf svg{ display:block; width: 15px; height: 20px; overflow: visible; }
-.bloom-btn .leaf path{ fill: var(--bb-leaf); }
-.bloom-btn .leaf.--alt path{ fill: var(--bb-leaf-alt); }
-
-.bloom-btn.is-blooming .leaf{
-  animation: bb-sprout 980ms var(--delay, 0ms) cubic-bezier(.25,.85,.35,1) both;
+.bloom-btn:hover:not(:disabled) .leaf,
+.bloom-btn.is-active:not(:disabled) .leaf{
+  opacity: 1;
+  filter: drop-shadow(0 0 6px var(--bb-sage));
+  z-index: 2;
 }
-@keyframes bb-sprout{
-  0%   { opacity: 0; transform: translate(-50%,0) rotate(var(--angle,0deg)) translateY(0) scale(0.2); }
-  28%  { opacity: 1; }
-  62%  { opacity: 1; transform: translate(-50%,0) rotate(var(--angle,0deg)) translateY(-34px) scale(1); }
-  100% { opacity: 0; transform: translate(-50%,0) rotate(var(--angle,0deg)) translateY(-46px) scale(0.75); }
-}
-
-.bloom-btn .dust{ width: 4px; height: 4px; border-radius: 50%; background: var(--bb-dust); }
-.bloom-btn.is-blooming .dust{
-  animation: bb-crumble 520ms var(--delay, 0ms) ease-out both;
-}
-@keyframes bb-crumble{
-  0%   { opacity: 0; transform: translate(-50%,0) translateY(0) scale(1); }
-  30%  { opacity: .55; }
-  100% { opacity: 0; transform: translate(-50%,0) translateY(-10px) scale(0.4); }
-}
-
-/* the bloom is the climax accent — a pale flower with a dark center, kept legible against the orange fill */
-.bloom-btn .petal-cluster{ left: 50%; width: 0; height: 0; }
-.bloom-btn .petal{
-  position: absolute;
-  left: 0; top: 0;
-  width: 9px; height: 15px;
-  margin-left: -4.5px;
-  transform-origin: 50% 100%;
-  background: var(--bb-bloom);
-  border-radius: 60% 60% 50% 50%;
-  opacity: 0;
-}
-.bloom-btn .petal-center{
-  position:absolute; left:-3px; top:-38px; width:6px; height:6px; border-radius:50%;
-  background: var(--bb-bloom-center); opacity:0;
-}
-
-.bloom-btn.is-blooming .petal-cluster{ opacity: 1; transform: translateY(-38px); }
-.bloom-btn.is-blooming .petal{
-  animation: bb-unfurl 640ms 520ms cubic-bezier(.25,.9,.3,1.2) both;
-}
-.bloom-btn.is-blooming .petal-center{
-  animation: bb-dotIn 400ms 760ms ease both;
-}
-@keyframes bb-unfurl{
-  0%   { opacity: 0; transform: rotate(var(--r,0)) scale(0) translateY(0); }
-  55%  { opacity: 1; }
-  75%  { opacity: 1; transform: rotate(var(--r,0)) scale(1) translateY(-5px); }
-  100% { opacity: 0; transform: rotate(var(--r,0)) scale(0.85) translateY(-2px); }
-}
-@keyframes bb-dotIn{
-  0%{ opacity:0; transform: scale(0); }
-  40%{ opacity:1; transform: scale(1); }
-  100%{ opacity:0; transform: scale(1); }
-}
+/* each leaf also rotates a little further as it flies out, like it's
+   tumbling rather than sliding on rails — spread across all 10 compass
+   directions rather than clustered on one side */
+.bloom-btn:hover:not(:disabled) .leaf-1,  .bloom-btn.is-active:not(:disabled) .leaf-1{  top: -65%; left: -35%;  transform: rotate(-35deg); }
+.bloom-btn:hover:not(:disabled) .leaf-2,  .bloom-btn.is-active:not(:disabled) .leaf-2{  top: 5%;   left: -50%;  transform: rotate(45deg) scaleX(-1); }
+.bloom-btn:hover:not(:disabled) .leaf-3,  .bloom-btn.is-active:not(:disabled) .leaf-3{  top: 80%;  left: -15%;  transform: rotate(-95deg); }
+.bloom-btn:hover:not(:disabled) .leaf-4,  .bloom-btn.is-active:not(:disabled) .leaf-4{  top: 15%;  left: 135%;  transform: rotate(-8deg); }
+.bloom-btn:hover:not(:disabled) .leaf-5,  .bloom-btn.is-active:not(:disabled) .leaf-5{  top: -75%; left: 110%;  transform: rotate(-55deg) scaleX(-1); }
+.bloom-btn:hover:not(:disabled) .leaf-6,  .bloom-btn.is-active:not(:disabled) .leaf-6{  top: 75%;  left: 110%;  transform: rotate(85deg); }
+.bloom-btn:hover:not(:disabled) .leaf-7,  .bloom-btn.is-active:not(:disabled) .leaf-7{  top: -95%; left: 45%;   transform: rotate(-125deg) scaleX(-1); }
+.bloom-btn:hover:not(:disabled) .leaf-8,  .bloom-btn.is-active:not(:disabled) .leaf-8{  top: 95%;  left: 50%;   transform: rotate(100deg); }
+.bloom-btn:hover:not(:disabled) .leaf-9,  .bloom-btn.is-active:not(:disabled) .leaf-9{  top: -35%; left: 130%;  transform: rotate(-160deg); }
+.bloom-btn:hover:not(:disabled) .leaf-10, .bloom-btn.is-active:not(:disabled) .leaf-10{ top: 40%;  left: -55%;  transform: rotate(120deg) scaleX(-1); }
 
 @media (prefers-reduced-motion: reduce){
-  .bloom-btn.is-blooming .bloom-btn__ring,
-  .bloom-btn.is-blooming .leaf,
-  .bloom-btn.is-blooming .dust,
-  .bloom-btn.is-blooming .petal,
-  .bloom-btn.is-blooming .petal-center{ animation: none !important; }
-  .bloom-btn.is-blooming{ background: var(--bb-fill-hover); }
+  .bloom-btn, .bloom-btn .leaf{ transition: none !important; }
 }

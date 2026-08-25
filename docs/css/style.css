@@ -50,11 +50,13 @@ main {
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow-md);
-  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
 }
 
+/* Each pane carries its own corner radii (rather than the card clipping
+   with overflow:hidden) so the Generate button's leaf flourish can fly
+   out past the pane edge without being cut off. */
 .pane-form {
   flex: 1 1 480px;
   background: var(--paper);
@@ -63,11 +65,13 @@ main {
   flex-direction: column;
   gap: 22px;
   min-width: 300px;
+  border-radius: 16px 0 0 16px;
 }
 
 .pane-diagram {
   flex: 1 1 380px;
   background: var(--dune);
+  border-radius: 0 16px 16px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -281,18 +285,6 @@ main {
 
 .spacer { flex: 1; }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* -------------------------------------------------------------- */
 /* Buttons                                                          */
 /* -------------------------------------------------------------- */
@@ -457,8 +449,8 @@ footer {
 @media (max-width: 720px) {
   main { padding: 20px 14px 2rem; }
   .split-card { flex-direction: column; }
-  .pane-diagram { order: -1; padding: 20px 16px; }
-  .pane-form { padding: 24px 20px; }
+  .pane-diagram { order: -1; padding: 20px 16px; border-radius: 16px 16px 0 0; }
+  .pane-form { padding: 24px 20px; border-radius: 0 0 16px 16px; }
   .result-chip { max-width: none; }
   .results-card { padding: 24px 18px; }
 }
