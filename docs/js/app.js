@@ -2,6 +2,7 @@ import * as calc from "./calculator.js";
 import { buildPotMesh } from "./potBuilder.js";
 import { writeBinarySTL, meshStats } from "./stlIO.js";
 import { PotViewer } from "./viewer.js";
+import { initBloomButton } from "./bloomButton.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,6 +28,7 @@ const els = {
   resultChip: $("resultChip"),
   resultChipText: $("resultChipText"),
   chipStlLink: $("chipStlLink"),
+  genStatus: $("genStatus"),
   inputSection: document.querySelector("main"),
 };
 
@@ -135,7 +137,7 @@ els.inputSection.addEventListener("change", () => {
 // Generate
 // ---------------------------------------------------------------------
 
-els.generateBtn.addEventListener("click", () => generate(true));
+initBloomButton(els.generateBtn, () => generate(true), { statusEl: els.genStatus });
 els.downloadStlBtn.addEventListener("click", downloadStl);
 els.chipStlLink.addEventListener("click", downloadStl);
 els.copyLinkBtn.addEventListener("click", copyLink);
