@@ -1,23 +1,27 @@
 /*
   Bloom button — click-to-generate micro-interaction for the Generate
   button: a seed icon sprouts, small leaves and soil dust drift up from
-  the top edge, and a single orange bloom opens at the climax.
+  the top edge, and a single pale bloom opens at the climax.
 
-  Colors are wired to the site's own custom properties (--clay, --sage,
-  --orange, --espresso, --dune from style.css) so the button always
-  matches the palette; --bb-clay-hover/--bb-sage-alt have no site
-  equivalent and keep their own literal shades.
+  Fill is Signal Orange, matching the site's other primary buttons
+  (Download STL etc. — see .primary-btn in style.css); the bloom's
+  climax color is the cream highlight instead of orange so it still
+  reads against an orange button. Colors are wired to the site's own
+  custom properties (--orange, --sage, --espresso, --dune from
+  style.css); --bb-leaf-alt has no site equivalent and keeps its own
+  literal shade.
 */
 
 :root{
-  --bb-clay: var(--clay);
-  --bb-clay-hover: #B06848;
-  --bb-sage: var(--sage);
-  --bb-sage-alt: #7E9179;
-  --bb-orange: var(--orange);
-  --bb-espresso: var(--espresso);
-  --bb-highlight: var(--dune);
-  --bb-focus: var(--bb-clay);
+  --bb-fill: var(--orange);
+  --bb-fill-hover: var(--orange-hover);
+  --bb-leaf: var(--sage);
+  --bb-leaf-alt: #7E9179;
+  --bb-bloom: var(--dune);
+  --bb-bloom-center: var(--espresso);
+  --bb-dust: var(--espresso);
+  --bb-label: var(--dune);
+  --bb-focus: var(--bb-fill);
 }
 
 .bloom-btn{
@@ -25,8 +29,8 @@
   appearance: none;
   border: none;
   cursor: pointer;
-  background: var(--bb-clay);
-  color: var(--bb-highlight);
+  background: var(--bb-fill);
+  color: var(--bb-label);
   font-family: 'Poppins', sans-serif;
   font-size: 15px;
   font-weight: 600;
@@ -39,7 +43,7 @@
   box-shadow: 0 1px 0 rgba(0,0,0,0.12), 0 10px 24px -14px rgba(59, 42, 32, 0.55);
   transition: transform 120ms ease, box-shadow 200ms ease, background 200ms ease, opacity 120ms ease;
 }
-.bloom-btn:hover:not(:disabled){ background: var(--bb-clay-hover); }
+.bloom-btn:hover:not(:disabled){ background: var(--bb-fill-hover); }
 .bloom-btn:active:not(:disabled){ transform: scale(0.965); }
 .bloom-btn:focus-visible{
   outline: 2px solid var(--bb-focus);
@@ -70,7 +74,7 @@
   inset: -4px;
   border-radius: 999px;
   pointer-events: none;
-  border: 1.5px solid var(--bb-sage);
+  border: 1.5px solid var(--bb-leaf);
   opacity: 0;
 }
 .bloom-btn.is-blooming .bloom-btn__ring{
@@ -98,8 +102,8 @@
 }
 
 .bloom-btn .leaf svg{ display:block; width: 15px; height: 20px; overflow: visible; }
-.bloom-btn .leaf path{ fill: var(--bb-sage); }
-.bloom-btn .leaf.--alt path{ fill: var(--bb-sage-alt); }
+.bloom-btn .leaf path{ fill: var(--bb-leaf); }
+.bloom-btn .leaf.--alt path{ fill: var(--bb-leaf-alt); }
 
 .bloom-btn.is-blooming .leaf{
   animation: bb-sprout 980ms var(--delay, 0ms) cubic-bezier(.25,.85,.35,1) both;
@@ -111,7 +115,7 @@
   100% { opacity: 0; transform: translate(-50%,0) rotate(var(--angle,0deg)) translateY(-46px) scale(0.75); }
 }
 
-.bloom-btn .dust{ width: 4px; height: 4px; border-radius: 50%; background: var(--bb-espresso); }
+.bloom-btn .dust{ width: 4px; height: 4px; border-radius: 50%; background: var(--bb-dust); }
 .bloom-btn.is-blooming .dust{
   animation: bb-crumble 520ms var(--delay, 0ms) ease-out both;
 }
@@ -121,7 +125,7 @@
   100% { opacity: 0; transform: translate(-50%,0) translateY(-10px) scale(0.4); }
 }
 
-/* the bloom carries the system's one sharp accent — Signal Orange, used once, at the climax */
+/* the bloom is the climax accent — a pale flower with a dark center, kept legible against the orange fill */
 .bloom-btn .petal-cluster{ left: 50%; width: 0; height: 0; }
 .bloom-btn .petal{
   position: absolute;
@@ -129,16 +133,16 @@
   width: 9px; height: 15px;
   margin-left: -4.5px;
   transform-origin: 50% 100%;
-  background: var(--bb-orange);
+  background: var(--bb-bloom);
   border-radius: 60% 60% 50% 50%;
   opacity: 0;
 }
 .bloom-btn .petal-center{
   position:absolute; left:-3px; top:-38px; width:6px; height:6px; border-radius:50%;
-  background: var(--bb-highlight); opacity:0;
+  background: var(--bb-bloom-center); opacity:0;
 }
 
-.bloom-btn.is-blooming .petal-cluster{ transform: translateY(-38px); }
+.bloom-btn.is-blooming .petal-cluster{ opacity: 1; transform: translateY(-38px); }
 .bloom-btn.is-blooming .petal{
   animation: bb-unfurl 640ms 520ms cubic-bezier(.25,.9,.3,1.2) both;
 }
@@ -163,5 +167,5 @@
   .bloom-btn.is-blooming .dust,
   .bloom-btn.is-blooming .petal,
   .bloom-btn.is-blooming .petal-center{ animation: none !important; }
-  .bloom-btn.is-blooming{ background: var(--bb-clay-hover); }
+  .bloom-btn.is-blooming{ background: var(--bb-fill-hover); }
 }
