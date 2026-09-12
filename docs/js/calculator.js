@@ -217,10 +217,9 @@ export function resolvePot({
         `between the dome slope and the inner wall.`
     );
   }
-  // Push the ring as close to the outer wall as the margin allows (real
-  // pots keep drainage near the rim) rather than centering it in the
-  // available band.
-  let boltRHoles = maxBoltR > minBoltR ? maxBoltR : minBoltR;
+  // Center the bolt circle in the band between the dome's outer edge and
+  // the pot's outer wall, rather than hugging either side.
+  let boltRHoles = maxBoltR > minBoltR ? (minBoltR + maxBoltR) / 2 : minBoltR;
   if (boltRHoles <= minBoltR || maxBoltR < minBoltR) {
     warnings.push(
       "Floor is too small to fit any drainage holes between the dome's slope and the inner wall with safe " +
