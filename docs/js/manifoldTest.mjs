@@ -43,15 +43,19 @@ const configs = [
   { label: "no drain holes", opts: { drainHoleCount: 0, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "low circular resolution (nSeg=24)", opts: { nSeg: 24, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "high circular resolution (nSeg=180)", opts: { nSeg: 180, liftNotchCount: 2, airSlotsEnabled: true } },
-  // KNOWN FAILING as of the dome floor rewrite: domeOuterR (flatTopR +
-  // slopeRun = 20mm) is a fixed absolute size, not scaled to pot size, so
-  // on a pot this small the dome's own outer flat ring no longer fits
-  // inside the floor at all (RBottomOuter < domeOuterR) and the mesh comes
-  // out non-watertight. This is explicitly out of scope for the current
-  // dome/logo rewrite (reference pot size only — see
-  // docs/nursery-pot-parametric-spec.md) and is left failing here on
-  // purpose so it isn't silently lost; scaling the dome to pot size is
-  // tracked as follow-up work, not fixed in this pass.
+  // domeOuterR (flatTopR + slopeRun = 20mm) is a fixed absolute size, not
+  // scaled to pot size, so on a pot this small the dome's own outer flat
+  // ring no longer fits inside the floor at all (RBottomOuter=11.25mm <
+  // domeOuterR=20mm here). This is still explicitly out of scope (scaling
+  // the dome to pot size is tracked as follow-up work, not fixed here) —
+  // the mesh now comes out watertight regardless (the drain-hole
+  // resolution-transition rewrite added a fallback that stitches straight
+  // from the sloped grid's ring to the wall's ring when there's no room
+  // for a flat outer band at all), but with RBottomOuter < domeOuterR
+  // that stitch necessarily runs radius-decreasing, so the floor likely
+  // flares out past the pot's own side wall rather than looking like a
+  // sane pot base — passing here only means "didn't come out with open
+  // edges," not "looks right."
   { label: "small pot (forces drain-hole/slot-count reduction)", opts: { outerTopDiam: 40, height: 100, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "short pot (notch/slots should auto-disable)", opts: { height: 20, liftNotchCount: 2, airSlotsEnabled: true } },
   { label: "large pot", opts: { outerTopDiam: 400, height: 350, liftNotchCount: 2, airSlotsEnabled: true } },
@@ -66,8 +70,8 @@ const configs = [
   // diameter/count to keep clearance from the dome slope and inner wall
   // (see calculator.js's dome drainage-hole block) — should still resolve
   // to a valid, watertight mesh, not reject.
-  // KNOWN FAILING for the same reason as the small-pot case above — same
-  // fixed-size-dome-doesn't-fit issue, not the hole-shrink logic itself.
+  // Same fixed-size-dome-doesn't-fit issue as the small-pot case above,
+  // not the hole-shrink logic itself — see that comment.
   { label: "dome floor, small pot (holes should auto-shrink)", opts: { outerTopDiam: 35, height: 60, drainHoleCount: 6 } },
   { label: "dome floor, large pot, many drain holes", opts: { outerTopDiam: 300, height: 250, drainHoleCount: 12 } },
   { label: "dome floor, low circular resolution", opts: { nSeg: 24, drainHoleCount: 8 } },

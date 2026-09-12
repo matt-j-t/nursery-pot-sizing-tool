@@ -143,9 +143,29 @@ export function earClip(polyPtsIn) {
   return { triangles, pts };
 }
 
-function bridgeHole(boundary, hole) {
-  let best = Infinity, bi = 0, bj = 0;
+function coordKey(p) {
+  return `${p[0].toFixed(6)}_${p[1].toFixed(6)}`;
+}
+
+// Bridges `hole` into `boundary` (the standard "cut" technique for turning
+// a polygon-with-holes into one simple ear-clippable loop: splice the hole
+// in at its nearest boundary vertex, duplicating that vertex to form a
+// zero-width seam). `avoid`, if given, is a Set of boundary-vertex
+// coordinate keys the nearest-point search must skip — without it, two
+// DIFFERENT loops bridged in sequence (e.g. an annulus's inner boundary
+// and a hole that happens to sit at the same angle as the outer
+// boundary's own first sample point) can both pick the exact same anchor
+// vertex, producing overlapping bridge segments that silently break
+// earClip's ear-finding (it stops partway through rather than throwing,
+// leaving the polygon incompletely triangulated — a real, reproducible
+// failure: 8 holes evenly spaced starting at theta=0, same as
+// circleXY's own first point, one call in every 96/8=12 hole-count
+// choices sharing that alignment). Every anchor this function picks is
+// added to `avoid` so later bridges in the same sequence steer clear of it.
+function bridgeHole(boundary, hole, avoid = null) {
+  let best = Infinity, bi = -1, bj = 0;
   for (let i = 0; i < boundary.length; i++) {
+    if (avoid && avoid.has(coordKey(boundary[i]))) continue;
     for (let j = 0; j < hole.length; j++) {
       const d = dist2d(boundary[i], hole[j]);
       if (d < best) {
@@ -155,6 +175,13 @@ function bridgeHole(boundary, hole) {
       }
     }
   }
+  if (bi === -1) {
+    // Every boundary vertex is already claimed as an anchor (pathological
+    // low-resolution case) — fall back to the plain nearest search rather
+    // than failing outright.
+    return bridgeHole(boundary, hole, null);
+  }
+  if (avoid) avoid.add(coordKey(boundary[bi]));
   return [
     ...boundary.slice(0, bi + 1),
     ...hole.slice(bj),
@@ -165,9 +192,10 @@ function bridgeHole(boundary, hole) {
 
 export function discWithHoles2D(outerRadius, holeCenters, holeRadius, nOuter = 48, nHole = 14) {
   let boundary = circleXY(outerRadius, nOuter);
+  const avoid = new Set();
   for (const [hx, hy] of holeCenters) {
     const hole = circleXY(holeRadius, nHole, hx, hy).reverse(); // CW hole
-    boundary = bridgeHole(boundary, hole);
+    boundary = bridgeHole(boundary, hole, avoid);
   }
   return earClip(boundary);
 }
@@ -182,6 +210,40 @@ export function discWithHoles3D(outerRadius, holeCenters, holeRadius, z, nOuter 
     out.push(facingUp ? [p0, p1, p2] : [p0, p2, p1]);
   }
   return out;
+}
+
+// Triangulates the strip between two co-centered rings that may have
+// DIFFERENT vertex counts (e.g. a coarse n-sided ring meeting a much
+// finer locally-refined one) — a resolution transition, not a hole. Walks
+// both rings together by cumulative angle (both must be built by
+// circleXY/ring3-style uniform sampling starting at theta=0, going CCW),
+// always advancing whichever ring's next vertex comes first, so vertices
+// are picked up roughly evenly from both sides rather than fanning out
+// from one hub vertex (a single-point fan is banned elsewhere in this
+// spec — see docs/nursery-pot-parametric-spec.md — for the degenerate
+// normals it produces; this avoids the same problem here). Always valid
+// (no crossing risk) for two simple, convex, common-center loops — unlike
+// bridging multiple separate hole loops into one ear-clipped polygon,
+// which can produce crossing seams (see bridgeHole's `avoid` param).
+export function stitchConcentricRings(ringA, ringB, outward = true) {
+  const nA = ringA.length, nB = ringB.length;
+  const tris = [];
+  let i = 0, j = 0;
+  while (i < nA || j < nB) {
+    const a0 = ringA[i % nA], b0 = ringB[j % nB];
+    const angANext = i < nA ? (TWO_PI * (i + 1)) / nA : Infinity;
+    const angBNext = j < nB ? (TWO_PI * (j + 1)) / nB : Infinity;
+    if (angANext <= angBNext) {
+      const a1 = ringA[(i + 1) % nA];
+      tris.push(outward ? [a0, a1, b0] : [a0, b0, a1]);
+      i++;
+    } else {
+      const b1 = ringB[(j + 1) % nB];
+      tris.push(outward ? [a0, b1, b0] : [a0, b0, b1]);
+      j++;
+    }
+  }
+  return tris;
 }
 
 export function holeTunnelWalls(holeCenters, holeRadius, z0, z1, nHole = 14) {
