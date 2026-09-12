@@ -212,38 +212,51 @@ export function discWithHoles3D(outerRadius, holeCenters, holeRadius, z, nOuter 
   return out;
 }
 
-// Triangulates the strip between two co-centered rings that may have
-// DIFFERENT vertex counts (e.g. a coarse n-sided ring meeting a much
-// finer locally-refined one) — a resolution transition, not a hole. Walks
-// both rings together by cumulative angle (both must be built by
-// circleXY/ring3-style uniform sampling starting at theta=0, going CCW),
-// always advancing whichever ring's next vertex comes first, so vertices
-// are picked up roughly evenly from both sides rather than fanning out
-// from one hub vertex (a single-point fan is banned elsewhere in this
-// spec — see docs/nursery-pot-parametric-spec.md — for the degenerate
-// normals it produces; this avoids the same problem here). Always valid
-// (no crossing risk) for two simple, convex, common-center loops — unlike
-// bridging multiple separate hole loops into one ear-clipped polygon,
-// which can produce crossing seams (see bridgeHole's `avoid` param).
-export function stitchConcentricRings(ringA, ringB, outward = true) {
-  const nA = ringA.length, nB = ringB.length;
-  const tris = [];
-  let i = 0, j = 0;
-  while (i < nA || j < nB) {
-    const a0 = ringA[i % nA], b0 = ringB[j % nB];
-    const angANext = i < nA ? (TWO_PI * (i + 1)) / nA : Infinity;
-    const angBNext = j < nB ? (TWO_PI * (j + 1)) / nB : Infinity;
-    if (angANext <= angBNext) {
-      const a1 = ringA[(i + 1) % nA];
-      tris.push(outward ? [a0, a1, b0] : [a0, b0, a1]);
-      i++;
-    } else {
-      const b1 = ringB[(j + 1) % nB];
-      tris.push(outward ? [a0, b1, b0] : [a0, b0, b1]);
-      j++;
-    }
+// A flat annulus (outerRadius..innerRadius) with its own inner boundary
+// PLUS any number of independent round holes cut into it, all triangulated
+// via ear-clipping — TRUE circular polygons, not a rasterized grid. This
+// is deliberately the same technique the pot's outer wall and plateau cap
+// already use for their own round edges (a real circleXY(...) polygon);
+// drain holes cut from a wallGrid/radialGrid's fixed open/closed columns
+// can only ever approximate a circle with a blocky stair-step boundary —
+// every cell is a hard in/out decision, so no amount of extra resolution
+// makes the edge smooth, only makes the steps smaller (this was tried:
+// see git history on this file/potBuilder.js for the abandoned
+// grid-resolution approach).
+//
+// Bridges every hole in first via bridgeHole's proven nearest-point +
+// `avoid` search (same as discWithHoles2D, empirically solid across 0-20+
+// holes on its own), and ONLY THEN bridges in the inner boundary last.
+// Order turns out to matter enormously here: bridging the inner boundary
+// FIRST (a large loop, comparable in size to the outer one) reliably
+// broke earClip's triangulation once any holes were added afterward — an
+// angle-based deterministic-anchor scheme was tried as a fix and made
+// things worse (broke even at 2-3 holes with no inner boundary at all).
+// Holes-then-inner, both via the plain proven bridgeHole+avoid, is what
+// actually works, verified across 0-20 holes with manifoldTest.mjs's full
+// suite plus a standalone sweep in git history for this function.
+export function annulusWithRoundHoles2D(outerRadius, innerRadius, holeCenters, holeRadius, nOuter = 96, nInner = 96, nHoleSides = 32) {
+  let boundary = circleXY(outerRadius, nOuter);
+  const avoid = new Set();
+  for (const [hx, hy] of holeCenters) {
+    const hole = circleXY(holeRadius, nHoleSides, hx, hy).reverse(); // CW hole
+    boundary = bridgeHole(boundary, hole, avoid);
   }
-  return tris;
+  const inner = circleXY(innerRadius, nInner).reverse(); // CW — a "hole" in the ear-clip sense
+  boundary = bridgeHole(boundary, inner, avoid);
+  return earClip(boundary);
+}
+
+export function annulusWithRoundHoles3D(outerRadius, innerRadius, holeCenters, holeRadius, z, nOuter = 96, nInner = 96, nHoleSides = 32, facingUp = true) {
+  const { triangles, pts } = annulusWithRoundHoles2D(outerRadius, innerRadius, holeCenters, holeRadius, nOuter, nInner, nHoleSides);
+  const out = [];
+  for (const [i0, i1, i2] of triangles) {
+    const p0 = [pts[i0][0], pts[i0][1], z];
+    const p1 = [pts[i1][0], pts[i1][1], z];
+    const p2 = [pts[i2][0], pts[i2][1], z];
+    out.push(facingUp ? [p0, p1, p2] : [p0, p2, p1]);
+  }
+  return out;
 }
 
 export function holeTunnelWalls(holeCenters, holeRadius, z0, z1, nHole = 14) {

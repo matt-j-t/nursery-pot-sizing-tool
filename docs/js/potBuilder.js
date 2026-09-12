@@ -198,9 +198,7 @@ export function buildPotMesh(spec) {
 
   // The plateau + conical slope is a fixed 2-ring frustum (it's already
   // straight in the r-z profile, so no extra rings are needed for
-  // smoothness); the flat outer ring beyond domeOuterR/domeOuterRInt —
-  // where the drain holes actually live — is built separately below, NOT
-  // as part of this grid.
+  // smoothness).
   const rLevelsExt = [flatTopR, domeOuterR];
   const rLevelsInt = [flatTopRInt, domeOuterRInt];
 
@@ -210,116 +208,47 @@ export function buildPotMesh(spec) {
   pieces.push(...geo.wallGridFaces(extFloorGrid, false));
   pieces.push(...geo.wallGridFaces(intFloorGrid, true));
 
-  // Drain holes live in the flat outer ring. That band gets its own,
-  // much finer, INDEPENDENT angular resolution (nFine) — same
-  // grid/open-columns cutting technique the wall already uses for air
-  // slots (proven safe for any number of simultaneous holes, since each
-  // is just marked cells in a shared grid, not a bridged/ear-clipped
-  // loop), just given enough columns to actually read as round. At the
-  // pot's own n, a hole's angular footprint at its bolt-circle radius
-  // spans only ~1-2 of the pot's ~100 circumferential columns — nowhere
-  // near enough to look round; it rasterizes as a cross/plus shape
-  // instead (this is the bug being fixed here).
+  // Drain holes live in the flat outer ring, built as a real ear-clipped
+  // annulus with true circular holes (geo.annulusWithRoundHoles3D) —
+  // exactly the same kind of construction the outer wall and the plateau
+  // cap already use for THEIR round edges (a real circleXY(...) polygon),
+  // rather than a rasterized wallGrid/radialGrid open/closed-column cut.
+  // A grid cut can only ever approximate a circle with a blocky
+  // stair-step boundary, since every cell is a hard in/out decision — no
+  // amount of extra grid resolution makes the edge smooth, only makes the
+  // steps smaller (this was tried, twice, at increasing resolution, and
+  // still read as visibly stepped/cross-like even at ~20 columns x 12
+  // rings per hole; see git history on this file for both attempts).
   //
-  // targetColsPerHole=8 (an earlier pass at this fix) still looked like a
-  // square with 4 notched corners, not a circle — an open/closed column
-  // test is a hard binary per cell, so with few columns the boundary
-  // follows a blocky stair-step, not a curve. That was confirmed by
-  // rendering the actual mesh output directly (not just counting
-  // vertices): 8 columns x the then-nHoleRings=5's 6 effective radial
-  // rows is unmistakably square-ish by eye, even though it's no longer
-  // the original 1-2-column cross. 20 columns, paired with nHoleRings=12
-  // below, is what actually reads as round; nFine never drops below n.
-  const targetColsPerHole = 20;
-  const nFine =
-    nHoles > 0
-      ? Math.min(900, Math.max(n, Math.round((targetColsPerHole * Math.PI * spec.holeBoltCircleRMM) / holeR)))
-      : n;
-
-  function holeOpenColumnsAtFineR(r) {
-    const cols = new Set();
-    for (let k = 0; k < nFine; k++) {
-      const theta = (2 * Math.PI * k) / nFine;
-      const x = r * Math.cos(theta), y = r * Math.sin(theta);
-      for (const [hx, hy] of holeCenters) {
-        if (Math.hypot(x - hx, y - hy) < holeR) {
-          cols.add(k);
-          break;
-        }
-      }
-    }
-    return cols;
-  }
-
-  // r-levels bracketing each drain hole's radial footprint, shared by
-  // both surfaces (a straight vertical hole has the same x,y footprint
-  // top to bottom). A ring EXACTLY at rc +/- holeR only touches the
-  // hole's circle at a single point (distance == holeR, not < holeR), so
-  // it always computes an EMPTY open-column set — the brackets sit just
-  // outside the circle (kept fully closed) with interior rings strictly
-  // inside it (rc +/- up to ~0.9*holeR) so the cut tapers in toward rc
-  // across several rings, like facets on a polygon approximating a
-  // circle.
-  const holeBracketLevels = [];
-  const nHoleRings = 12;
-  for (const [hx, hy] of holeCenters) {
-    const rc = Math.hypot(hx, hy);
-    holeBracketLevels.push(rc - holeR * 1.15, rc + holeR * 1.15);
-    for (let i = 0; i <= nHoleRings; i++) {
-      holeBracketLevels.push(rc - holeR * 0.9 + holeR * 1.8 * (i / nHoleRings));
-    }
-  }
-
-  // Tiny radial nudge so the fine band's own first/last ring never lands
-  // exactly on top of the coarse ring it's stitched to below (which would
-  // leave a handful of exactly-coincident vertices sitting right at the
-  // edge of a zero-area triangle).
-  const transEps = 0.02;
-  const flatExtLo = domeOuterR + transEps, flatExtHi = RBottomOuter - transEps;
-  const flatIntLo = domeOuterRInt + transEps, flatIntHi = RInnerFloorTop - transEps;
-  const rLevelsFlatExt = geo
-    .mergeZLevels([flatExtLo, flatExtHi], holeBracketLevels)
-    .filter((r) => r >= flatExtLo - 1e-6 && r <= flatExtHi + 1e-6);
-  const rLevelsFlatInt = geo
-    .mergeZLevels([flatIntLo, flatIntHi], holeBracketLevels)
-    .filter((r) => r >= flatIntLo - 1e-6 && r <= flatIntHi + 1e-6);
-
-  // A pot small enough that the (fixed-size) dome doesn't actually fit
-  // inside the floor leaves no room at all for this band (flatExtHi <=
-  // flatExtLo) — already a documented, out-of-scope failure elsewhere
-  // (see manifoldTest.mjs's "small pot" cases: the mesh already comes out
-  // non-watertight there for unrelated reasons). Skip the band rather
-  // than building a grid with a backwards/empty r-range, which would
-  // otherwise throw trying to stitch a ring that was never created.
-  const hasFlatBand = flatExtHi > flatExtLo && flatIntHi > flatIntLo;
-
-  if (hasFlatBand) {
-    const flatExtGrid = geo.radialGrid(extFloorZ, rLevelsFlatExt, nFine, holeOpenColumnsAtFineR);
-    const flatIntGrid = geo.radialGrid(intFloorZ, rLevelsFlatInt, nFine, holeOpenColumnsAtFineR);
-
-    pieces.push(...geo.wallGridFaces(flatExtGrid, false));
-    pieces.push(...geo.wallGridFaces(flatIntGrid, true));
-    // Seals every drain hole loop found inside this grid (the grid's own
-    // inner/outer edge rings are excluded automatically, same as the
-    // wall's slot stitching above — they're resolution-transition seams,
-    // capped via stitchConcentricRings just below, not holes).
-    pieces.push(...geo.stitchWallGridHoles(flatExtGrid, flatIntGrid));
-
-    // Stitch the fine flat-ring band onto its coarse neighbors on both
-    // sides (the sloped grid inboard, the outer/inner wall's own bottom
-    // ring outboard) — a resolution transition, not a hole, so
-    // stitchConcentricRings (safe for any vertex-count mismatch, no
-    // bridging/crossing risk) is what's needed, not the hole-cutting grid
-    // or the ear-clip machinery.
-    pieces.push(...geo.stitchConcentricRings(extFloorGrid.rings[extFloorGrid.rings.length - 1], flatExtGrid.rings[0], false));
-    pieces.push(...geo.stitchConcentricRings(flatExtGrid.rings[flatExtGrid.rings.length - 1], ringBottomOuter, false));
-    pieces.push(...geo.stitchConcentricRings(intFloorGrid.rings[intFloorGrid.rings.length - 1], flatIntGrid.rings[0], true));
-    pieces.push(...geo.stitchConcentricRings(flatIntGrid.rings[flatIntGrid.rings.length - 1], ringBottomInner, true));
+  // nOuter/nInner both use the pot's own n, so this annulus's outer edge
+  // is exactly geo.ring3(RBottomOuter/RInnerFloorTop, ...) (identical to
+  // ringBottomOuter/ringBottomInner below) and its inner edge is exactly
+  // the sloped grid's own last ring above — same formula, same n, so
+  // vertices coincide exactly and everything welds with no seam or
+  // stitching step needed. nHoleSides is a flat 32 regardless of pot size
+  // or hole count: unlike the abandoned grid approach, cost here scales
+  // with holeCount x nHoleSides only, not with the whole annulus's
+  // resolution, so a generous fixed value is cheap.
+  const nHoleSides = 32;
+  if (RBottomOuter > domeOuterR && RInnerFloorTop > domeOuterRInt) {
+    pieces.push(...geo.annulusWithRoundHoles3D(RBottomOuter, domeOuterR, holeCenters, holeR, 0, n, n, nHoleSides, false));
+    pieces.push(...geo.annulusWithRoundHoles3D(RInnerFloorTop, domeOuterRInt, holeCenters, holeR, intOuterZ, n, n, nHoleSides, false));
+    // Each hole is cut independently into the ext and int surfaces above —
+    // this is what actually connects the two openings into a real
+    // through-hole (without it, both surfaces have a correctly round but
+    // completely unsealed hole boundary).
+    pieces.push(...geo.holeTunnelWalls(holeCenters, holeR, 0, intOuterZ, nHoleSides));
   } else {
-    // No room for a flat band (or holes) at all — connect the sloped
-    // grid's own outer ring directly to the wall's bottom ring.
-    pieces.push(...geo.stitchConcentricRings(extFloorGrid.rings[extFloorGrid.rings.length - 1], ringBottomOuter, false));
-    pieces.push(...geo.stitchConcentricRings(intFloorGrid.rings[intFloorGrid.rings.length - 1], ringBottomInner, true));
+    // A pot small enough that the (fixed-size) dome doesn't actually fit
+    // inside the floor leaves no room at all for a flat band (RBottomOuter
+    // <= domeOuterR) — already a documented, out-of-scope failure
+    // elsewhere (see manifoldTest.mjs's "small pot" cases). An annulus
+    // with its "outer" radius smaller than its "inner" one isn't a valid
+    // shape to ear-clip, so fall back to connecting the sloped grid's own
+    // last ring straight to the wall's ring (same n on both, so a plain
+    // quadStrip is enough — no holes fit here anyway).
+    pieces.push(...geo.quadStrip(extFloorGrid.rings[extFloorGrid.rings.length - 1], ringBottomOuter, false));
+    pieces.push(...geo.quadStrip(intFloorGrid.rings[intFloorGrid.rings.length - 1], ringBottomInner, true));
   }
 
   // Plateau caps — flat NGON caps (earClip across their own boundary,
