@@ -219,18 +219,21 @@ export function buildPotMesh(spec) {
   // pot's own n, a hole's angular footprint at its bolt-circle radius
   // spans only ~1-2 of the pot's ~100 circumferential columns — nowhere
   // near enough to look round; it rasterizes as a cross/plus shape
-  // instead (this is the bug being fixed here). nFine never drops below
-  // n. The 600 cap keeps worst-case build time (an extreme small-hole /
-  // large-bolt-circle ratio, which would otherwise ask for several
-  // thousand columns) around 80ms, measured — comfortably inside the live
-  // preview's 200ms debounce — at the cost of the hole looking more like
-  // an octagon than a smooth circle in that specific extreme case; the
-  // common case (a reference-sized pot's default holes) reaches the full
-  // targetColsPerHole well under the cap.
-  const targetColsPerHole = 8;
+  // instead (this is the bug being fixed here).
+  //
+  // targetColsPerHole=8 (an earlier pass at this fix) still looked like a
+  // square with 4 notched corners, not a circle — an open/closed column
+  // test is a hard binary per cell, so with few columns the boundary
+  // follows a blocky stair-step, not a curve. That was confirmed by
+  // rendering the actual mesh output directly (not just counting
+  // vertices): 8 columns x the then-nHoleRings=5's 6 effective radial
+  // rows is unmistakably square-ish by eye, even though it's no longer
+  // the original 1-2-column cross. 20 columns, paired with nHoleRings=12
+  // below, is what actually reads as round; nFine never drops below n.
+  const targetColsPerHole = 20;
   const nFine =
     nHoles > 0
-      ? Math.min(600, Math.max(n, Math.round((targetColsPerHole * Math.PI * spec.holeBoltCircleRMM) / holeR)))
+      ? Math.min(900, Math.max(n, Math.round((targetColsPerHole * Math.PI * spec.holeBoltCircleRMM) / holeR)))
       : n;
 
   function holeOpenColumnsAtFineR(r) {
@@ -258,7 +261,7 @@ export function buildPotMesh(spec) {
   // across several rings, like facets on a polygon approximating a
   // circle.
   const holeBracketLevels = [];
-  const nHoleRings = 5;
+  const nHoleRings = 12;
   for (const [hx, hy] of holeCenters) {
     const rc = Math.hypot(hx, hy);
     holeBracketLevels.push(rc - holeR * 1.15, rc + holeR * 1.15);
